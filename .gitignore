@@ -1,0 +1,11 @@
+﻿# 忽略 appsettings.json（設定檔，避免敏感資訊洩漏）
+BackendAPI/appsettings.json
+BackendAPI/appsettings.Development.json
+
+# 忽略 Visual Studio 相關檔案
+.vs/
+*.user
+
+# 忽略編譯產物（避免無用檔案影響 Git）
+bin/
+obj/
