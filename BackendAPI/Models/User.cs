@@ -24,7 +24,10 @@ namespace BackendAPI.Models
         public bool IsVerified { get; set; } = false; // 信箱驗證狀態，預設 false
 
         [Column("created_at")]
-        public DateTime CreatedAt { get; set; } // 註冊時間，預設當前時間
+        public DateTime CreatedAt { get; set; } = DateTime.UtcNow; // 註冊時間，預設當前時間
+
+        // 定義關聯關係
+        public ICollection<UserProvider> UserProviders { get; set; } = new List<UserProvider>();
 
     }
 }
