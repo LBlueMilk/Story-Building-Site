@@ -26,6 +26,12 @@ namespace BackendAPI.Models
         [Column("created_at")]
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow; // 註冊時間，預設當前時間
 
+        [Column("deleted_at")]
+        public DateTime? DeletedAt { get; set; }  // 軟刪除時間
+
+        [Column("restored_at")]
+        public DateTime? RestoredAt { get; set; } // 還原時間
+
         // 定義關聯關係
         public ICollection<UserProvider> UserProviders { get; set; } = new List<UserProvider>();
 

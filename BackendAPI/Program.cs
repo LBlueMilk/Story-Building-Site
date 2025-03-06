@@ -1,10 +1,12 @@
 using BackendAPI.Data;
+using BackendAPI.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using System.Security.Cryptography;
 using System.Text;
+using static BackendAPI.Controllers.AuthController;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -36,8 +38,10 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         };
     });
 
-builder.Services.AddAuthorization(); // 加入身份驗證
-
+// 加入信箱服務
+builder.Services.AddScoped<IEmailService, EmailService>();
+// 加入身份驗證
+builder.Services.AddAuthorization(); 
 // 加入 API 服務
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();

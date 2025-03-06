@@ -8,6 +8,7 @@ using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
 using Microsoft.AspNetCore.Authorization;
+using BackendAPI.Services;
 
 namespace BackendAPI.Controllers
 {
@@ -17,11 +18,13 @@ namespace BackendAPI.Controllers
     {
         private readonly UserDbContext _context;
         private readonly IConfiguration _config;
+        private readonly IEmailService _emailService;
 
-        public AuthController(UserDbContext context, IConfiguration config)
+        public AuthController(UserDbContext context, IConfiguration config, IEmailService emailService)
         {
             _context = context;
             _config = config;
+            _emailService = emailService;
         }
 
         // 註冊 API
@@ -244,7 +247,7 @@ namespace BackendAPI.Controllers
             if (user == null)
                 return NotFound(new { message = "此 Email 尚未註冊" });
 
-            // 產生重設密碼 Token（有效期限 30 分鐘）
+            // 產生重設密碼 Token（有效期限預設 30 分鐘）
             var token = GenerateResetPasswordToken(user);
 
             // 在正式環境應該發送 Email，而不是直接回傳 token
@@ -274,6 +277,94 @@ namespace BackendAPI.Controllers
 
             var token = tokenHandler.CreateToken(tokenDescriptor);
             return tokenHandler.WriteToken(token);
+        }
+
+        // 刪除帳號 API
+        [Authorize]
+        [HttpDelete("delete-account")]
+        public async Task<IActionResult> DeleteAccount()
+        {
+            var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (userId == null)
+                return Unauthorized(new { message = "無效的 Token" });
+
+            var user = await _context.Users.FindAsync(int.Parse(userId));
+            if (user == null)
+                return NotFound(new { message = "找不到使用者" });
+
+            if (user.DeletedAt.HasValue)
+                return BadRequest(new { message = "帳號已刪除，無法重複刪除" });
+
+            // 設定 deleted_at
+            user.DeletedAt = DateTime.UtcNow;
+
+            await _context.SaveChangesAsync();
+            return Ok(new { message = "帳號刪除成功，30 天內可恢復" });
+        }
+
+        // 還原帳號 API
+        [Authorize]
+        [HttpPut("restore-account")]
+        public async Task<IActionResult> RestoreAccount()
+        {
+            var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (userId == null)
+                return Unauthorized(new { message = "無效的 Token" });
+
+            var user = await _context.Users.FindAsync(int.Parse(userId));
+            if (user == null)
+                return NotFound(new { message = "找不到使用者" });
+
+            if (!user.DeletedAt.HasValue)
+                return BadRequest(new { message = "帳號未刪除，無需還原" });
+
+            // 清除 deleted_at
+            user.DeletedAt = null;
+            user.RestoredAt = DateTime.UtcNow;
+
+            await _context.SaveChangesAsync();
+            return Ok(new { message = "帳號已成功還原" });
+        }
+
+        // 清除過期帳號 API
+        [HttpPost("cleanup")]
+        public async Task<IActionResult> CleanupInactiveAccounts()
+        {
+            int cleanupDays = int.TryParse(Environment.GetEnvironmentVariable("CLEANUP_THRESHOLD_DAYS"), out int days) ? days : 30;
+            var thresholdDate = DateTime.UtcNow.AddDays(-cleanupDays);
+
+            var expiredUsers = await _context.Users
+                .Where(u => u.DeletedAt != null && u.DeletedAt < thresholdDate)
+                .ToListAsync();
+
+            if (!expiredUsers.Any())
+            {
+                return Ok(new { message = "沒有過期帳戶需要刪除。" });
+            }
+
+            _context.Users.RemoveRange(expiredUsers);
+            await _context.SaveChangesAsync();
+
+            // 在正式環境應該發送 Email 通知管理員
+            await _emailService.SendAsync("之後用自己的信箱", "帳號清理通知", $"已刪除 {expiredUsers.Count} 個過期帳號。");
+
+            return Ok();
+        }
+
+        // 斷開登入方式 API
+        public async Task<IActionResult> ReconnectProvider(string provider, int userId)
+        {
+            var record = await _context.UserProviders
+                .FirstOrDefaultAsync(up => up.UserId == userId && up.Provider == provider);
+
+            if (record != null)
+            {
+                record.DisconnectedAt = null; // 重新連結，清除斷開時間
+                await _context.SaveChangesAsync();
+                return Ok(new { message = $"{provider} 已重新連結" });
+            }
+
+            return NotFound(new { message = "未找到對應的登入方式" });
         }
 
 

@@ -23,6 +23,9 @@ namespace BackendAPI.Models
         [Column("created_at")]
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow; // 註冊時間，預設當前時間
 
+        [Column("disconnected_at")]
+        public DateTime? DisconnectedAt { get; set; }  // 斷開連接時間
+
         // 外鍵關聯
         public User User { get; set; }
     }
