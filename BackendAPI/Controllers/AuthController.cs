@@ -319,7 +319,7 @@ namespace BackendAPI.Controllers
                 return BadRequest(new { message = "帳號未刪除，無需還原" });
 
             // 清除 deleted_at
-            user.DeletedAt = null;
+            user.DeletedAt = null; 
             user.RestoredAt = DateTime.UtcNow;
 
             await _context.SaveChangesAsync();

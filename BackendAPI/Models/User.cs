@@ -34,6 +34,10 @@ namespace BackendAPI.Models
 
         // 定義關聯關係
         public ICollection<UserProvider> UserProviders { get; set; } = new List<UserProvider>();
+        // 該使用者創建的故事
+        public List<Story> Stories { get; set; } = new List<Story>();
+        // 該使用者被分享的故事
+        public List<StorySharedUser> SharedStories { get; set; } = new List<StorySharedUser>();
 
     }
 }
