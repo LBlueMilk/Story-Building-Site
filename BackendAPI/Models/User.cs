@@ -24,7 +24,20 @@ namespace BackendAPI.Models
         public bool IsVerified { get; set; } = false; // 信箱驗證狀態，預設 false
 
         [Column("created_at")]
-        public DateTime CreatedAt { get; set; } // 註冊時間，預設當前時間
+        public DateTime CreatedAt { get; set; } = DateTime.UtcNow; // 註冊時間，預設當前時間
+
+        [Column("deleted_at")]
+        public DateTime? DeletedAt { get; set; }  // 軟刪除時間
+
+        [Column("restored_at")]
+        public DateTime? RestoredAt { get; set; } // 還原時間
+
+        // 定義關聯關係
+        public ICollection<UserProvider> UserProviders { get; set; } = new List<UserProvider>();
+        // 該使用者創建的故事
+        public List<Story> Stories { get; set; } = new List<Story>();
+        // 該使用者被分享的故事
+        public List<StorySharedUser> SharedStories { get; set; } = new List<StorySharedUser>();
 
     }
 }

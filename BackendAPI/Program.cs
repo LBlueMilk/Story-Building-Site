@@ -1,10 +1,12 @@
 using BackendAPI.Data;
+using BackendAPI.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using System.Security.Cryptography;
 using System.Text;
+using static BackendAPI.Controllers.AuthController;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -31,12 +33,15 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             //ValidIssuer = "網址", // 設定發行者名稱
             ValidateAudience = false, // 目前是 `false`，表示不檢查 Token 是給誰的，雲端後修改         
             //ValidAudience = "", // 設定接收者名稱
-            ValidateLifetime = true // 檢查 Token 是否過期
+            ValidateLifetime = true, // 檢查 Token 是否過期
+            ClockSkew = TimeSpan.Zero // 取消預設 5 分鐘誤差
         };
     });
 
-builder.Services.AddAuthorization(); // 加入身份驗證
-
+// 加入信箱服務
+builder.Services.AddScoped<IEmailService, EmailService>();
+// 加入身份驗證
+builder.Services.AddAuthorization(); 
 // 加入 API 服務
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
@@ -53,7 +58,7 @@ builder.Services.AddSwaggerGen(options =>
         Scheme = "Bearer",
         BearerFormat = "JWT",
         In = ParameterLocation.Header,
-        Description = "請輸入 `Bearer {你的 JWT Token}`"
+        Description = "請輸入 `你的 JWT Token`"
     });
 
     options.AddSecurityRequirement(new OpenApiSecurityRequirement
@@ -81,9 +86,8 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
-app.UseHttpsRedirection();
-
 app.UseAuthentication(); // **一定要在 Authorization 之前執行**
+app.UseHttpsRedirection();
 app.UseAuthorization();
 
 app.MapControllers();
