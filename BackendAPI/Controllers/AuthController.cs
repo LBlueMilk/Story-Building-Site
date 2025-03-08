@@ -351,6 +351,7 @@ namespace BackendAPI.Controllers
             return Ok();
         }
 
+        [HttpPost("disconnect-provider")]
         // 斷開登入方式 API
         public async Task<IActionResult> ReconnectProvider(string provider, int userId)
         {

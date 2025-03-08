@@ -1,12 +1,15 @@
 ﻿using System.ComponentModel.DataAnnotations.Schema;
 using System.ComponentModel.DataAnnotations;
+using System.Text.Json.Serialization;
 
 namespace BackendAPI.Models
 {
+    [Table("stories")]
     public class Story
     {
         [Key]
         [Column("id")]
+        [DatabaseGenerated(DatabaseGeneratedOption.Identity)] // 明確告訴 EF Core 這是自增欄位
         public int Id { get; set; } // 故事 ID（主鍵）
 
         [Required]
@@ -37,7 +40,8 @@ namespace BackendAPI.Models
 
         // 導覽屬性
         [ForeignKey("CreatorId")]
-        public User Creator { get; set; } // 關聯到 `User`，這是 `HasOne(s => s.Creator)` 需要的屬性
+        [JsonIgnore]
+        public virtual User? Creator { get; set; } // 關聯到 `User`，這是 `HasOne(s => s.Creator)` 需要的屬性
 
         // 該故事被分享的使用者
         public ICollection<StorySharedUser> SharedUsers { get; set; } = new List<StorySharedUser>();

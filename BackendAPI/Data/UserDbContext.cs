@@ -55,6 +55,11 @@ namespace BackendAPI.Data
                 .HasForeignKey(s => s.CreatorId) // `story.creator_id` 關聯到 `users.id`
                 .OnDelete(DeleteBehavior.Cascade); // 刪除使用者時，該使用者創建的故事也刪除
 
+            // **設定 `StorySharedUser` 的 ID 自增長**
+            modelBuilder.Entity<StorySharedUser>()
+                .Property(ssu => ssu.Id)
+                .ValueGeneratedOnAdd();
+
             // 設定共享故事的關聯
             modelBuilder.Entity<StorySharedUser>()
                 .HasKey(ssu => new { ssu.StoryId, ssu.UserId }); // 設定組合鍵，避免重複授權
