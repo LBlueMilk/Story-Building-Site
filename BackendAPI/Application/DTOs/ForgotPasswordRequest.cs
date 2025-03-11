@@ -1,4 +1,4 @@
-﻿namespace BackendAPI.Models
+﻿namespace BackendAPI.Application.DTOs
 {
     public class ForgotPasswordRequest
     {
