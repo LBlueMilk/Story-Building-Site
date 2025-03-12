@@ -77,6 +77,13 @@ namespace BackendAPI.Models
         }
         private DateTime? _lastPasswordChange; // 記錄最後密碼變更時間
 
+        // 使用者代碼，用於分享故事
+        [Required]
+        [Column("user_code")]
+        [MaxLength(10)]
+        public string UserCode { get; set; } = string.Empty;
+
+
 
         // 定義關聯關係
         public virtual ICollection<UserProvider> UserProviders { get; set; } = new List<UserProvider>();

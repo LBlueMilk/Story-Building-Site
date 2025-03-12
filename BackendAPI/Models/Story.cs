@@ -38,6 +38,17 @@ namespace BackendAPI.Models
         [Column("deleted_at")]
         public DateTime? DeletedAt { get; set; } // 軟刪除時間
 
+        [Column("restored_at")]
+        public DateTime? RestoredAt { get; set; } // 還原時間
+
+        [Column("share_token")]
+        [MaxLength(255)]
+        public string? ShareToken { get; set; }  // 分享用的 Token，可為 NULL
+
+        [Column("share_token_expires_at")]
+        public DateTime? ShareTokenExpiresAt { get; set; } // Token 過期時間
+
+
         // 導覽屬性
         [ForeignKey("CreatorId")]
         [JsonIgnore]

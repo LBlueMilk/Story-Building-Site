@@ -8,6 +8,7 @@ namespace BackendAPI.Models
     {
         [Key]
         [Column("id")]
+        [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
         public int Id { get; set; } // 共享記錄 ID（主鍵）
 
         [Required]
