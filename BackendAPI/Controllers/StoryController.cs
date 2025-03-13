@@ -140,6 +140,13 @@ namespace BackendAPI.Controllers
                 hasChanges = true;
             }
 
+            // 若無任何變更，則直接回傳，避免不必要的寫入
+            if (!hasChanges)
+            {
+                return Ok(new { message = "未檢測到變更，無需更新" });
+            }
+
+            // 只有有變更時才更新
             story.UpdatedAt = DateTime.UtcNow;
             await _context.SaveChangesAsync();
 
@@ -155,7 +162,7 @@ namespace BackendAPI.Controllers
                 UpdatedAt = story.UpdatedAt
             };
 
-            return Ok(response);
+            return Ok(new { message = "故事更新成功", story = response });
         }
 
         // 刪除故事（軟刪除）
@@ -289,41 +296,49 @@ namespace BackendAPI.Controllers
             });
         }
 
+        // 共享故事給其他使用者
         [Authorize]
         [HttpPost("{id}/share/by-code/{userCode}")]
         public async Task<IActionResult> ShareStoryByCode(int id, string userCode)
         {
             var userId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value!);
-            var story = await _context.Stories.FindAsync(id);
 
-            if (story == null || story.CreatorId != userId)
-                return Unauthorized(new { message = "無權限共享此故事" });
+            var storyWithTargetUser = await _context.Stories
+                .Where(s => s.Id == id && s.CreatorId == userId) // 確保使用者有權限
+                .Select(s => new
+                {
+                    Story = s,
+                    TargetUser = _context.Users.FirstOrDefault(u => u.UserCode == userCode) // 查找 UserCode
+                })
+                .FirstOrDefaultAsync();
 
-            // 查找使用者的 ID
-            var targetUser = await _context.Users.FirstOrDefaultAsync(u => u.UserCode == userCode);
-            if (targetUser == null)
+            // 確保故事存在且使用者有權限
+            if (storyWithTargetUser == null)
+                return Unauthorized(new { message = "無權限共享此故事或故事不存在" });
+
+            // 驗證目標使用者是否存在
+            if (storyWithTargetUser.TargetUser == null)
                 return NotFound(new { message = "找不到該識別碼的使用者" });
 
-            // 確保不會重複分享
-            bool alreadyShared = await _context.StorySharedUsers
-                .AnyAsync(su => su.StoryId == id && su.UserId == targetUser.Id);
+            var targetUserId = storyWithTargetUser.TargetUser.Id;
 
+            // 檢查是否已經共享過
+            bool alreadyShared = await _context.StorySharedUsers.AnyAsync(su => su.StoryId == id && su.UserId == targetUserId);
             if (alreadyShared)
                 return BadRequest(new { message = "已經共享過此故事" });
 
-            var sharedStory = new StorySharedUser
+            // 新增共享紀錄
+            _context.StorySharedUsers.Add(new StorySharedUser
             {
                 StoryId = id,
-                UserId = targetUser.Id
-            };
+                UserId = targetUserId
+            });
 
-            _context.StorySharedUsers.Add(sharedStory);
             await _context.SaveChangesAsync();
-
             return Ok(new { message = $"已成功共享故事給 {userCode}" });
         }
 
-        // 產生共享連結
+        // 產生共享連結（允許在 Token 被使用後立即重新產生）
         [Authorize]
         [HttpPost("{id}/generate-link")]
         public async Task<IActionResult> GenerateShareLink(int id)
@@ -334,89 +349,179 @@ namespace BackendAPI.Controllers
             if (story == null || story.CreatorId != userId)
                 return Unauthorized(new { message = "無權限產生共享連結" });
 
-            // 產生新的 Token 並設定 10 分鐘有效期
-            story.ShareToken = Guid.NewGuid().ToString();
-            story.ShareTokenExpiresAt = DateTime.UtcNow.AddMinutes(10);
-            await _context.SaveChangesAsync();
+            // 如果 Token 已被使用（被清空），允許立刻產生新 Token
+            if (story.ShareToken == null || story.ShareTokenExpiresAt == null || story.ShareTokenExpiresAt < DateTime.UtcNow)
+            {
+                story.ShareToken = Guid.NewGuid().ToString();
+                story.ShareTokenExpiresAt = DateTime.UtcNow.AddMinutes(10);
+                await _context.SaveChangesAsync();
 
-            string shareLink = $"https://your-frontend.com/share/{story.ShareToken}";
+                return Ok(new
+                {
+                    shareLink = $"https://your-frontend.com/share/{story.ShareToken}",
+                    expiresAt = story.ShareTokenExpiresAt
+                });
+            }
 
-            return Ok(new { shareLink, expiresAt = story.ShareTokenExpiresAt });
+            // Token 仍然有效，不允許重新產生
+            return BadRequest(new
+            {
+                message = "共享連結仍然有效，無需重新產生",
+                shareLink = $"https://your-frontend.com/share/{story.ShareToken}",
+                expiresAt = story.ShareTokenExpiresAt
+            });
         }
 
 
         // 接受共享連結
+        [Authorize] // 需要登入才能存取共享內容
         [HttpGet("shared/{token}")]
         public async Task<IActionResult> AccessSharedStory(string token)
         {
+            var userId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value!);
+
             var story = await _context.Stories
+                .Include(s => s.SharedUsers)
                 .FirstOrDefaultAsync(s => s.ShareToken == token);
 
             if (story == null || story.ShareTokenExpiresAt == null)
                 return NotFound(new { message = "無效的共享連結" });
 
-            // 檢查是否過期
+            // 檢查 Token 是否過期
             if (story.ShareTokenExpiresAt < DateTime.UtcNow)
             {
-                // 過期後刪除 Token
+                // 過期後清除 Token，防止重複使用
                 story.ShareToken = null;
                 story.ShareTokenExpiresAt = null;
-                await _context.SaveChangesAsync();
+                await _context.SaveChangesAsync(); // 只有過期時才存入 DB
                 return BadRequest(new { message = "共享連結已過期" });
             }
 
-            // 使用後立即失效
+            // 檢查當前登入使用者是否已經擁有該故事的共享權限
+            bool alreadyShared = story.CreatorId == userId ||
+                                 story.SharedUsers.Any(su => su.UserId == userId);
+
+            if (alreadyShared)
+            {
+                return Ok(new
+                {
+                    message = "你已經擁有該故事的共享權限",
+                    story = new StoryResponseDto
+                    {
+                        Id = story.Id,
+                        PublicId = story.PublicId,
+                        Title = story.Title,
+                        Description = story.Description,
+                        IsPublic = story.IsPublic,
+                        CreatedAt = story.CreatedAt
+                    }
+                });
+            }
+
+            // 新增共享權限
+            var sharedUser = new StorySharedUser
+            {
+                StoryId = story.Id,
+                UserId = userId
+            };
+
+            _context.StorySharedUsers.Add(sharedUser);
+
+            // 使 Token 失效，防止多次共享
             story.ShareToken = null;
             story.ShareTokenExpiresAt = null;
+
             await _context.SaveChangesAsync();
 
-            return Ok(new StoryResponseDto
+            return Ok(new
             {
-                Id = story.Id,
-                PublicId = story.PublicId,
-                Title = story.Title,
-                Description = story.Description,
-                IsPublic = story.IsPublic,
-                CreatedAt = story.CreatedAt
+                message = "你已成功獲得該故事的共享權限",
+                story = new StoryResponseDto
+                {
+                    Id = story.Id,
+                    PublicId = story.PublicId,
+                    Title = story.Title,
+                    Description = story.Description,
+                    IsPublic = story.IsPublic,
+                    CreatedAt = story.CreatedAt
+                }
             });
         }
 
 
-
-        // 取消共享故事
+        // 取消共享故事（創建者 & 共享者皆可取消）
         [Authorize]
         [HttpDelete("{id}/unshare/{targetUserId}")]
         public async Task<IActionResult> UnshareStory(int id, int targetUserId)
         {
             var userId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value!);
-            var story = await _context.Stories.Include(s => s.SharedUsers).FirstOrDefaultAsync(s => s.Id == id);
+            var story = await _context.Stories
+                .Include(s => s.SharedUsers)
+                .FirstOrDefaultAsync(s => s.Id == id);
 
             if (story == null)
                 return NotFound(new { message = "找不到故事" });
 
-            // 允許創建者或被共享者取消共享
-            if (story.CreatorId != userId && !story.SharedUsers.Any(su => su.UserId == userId))
-                return Unauthorized(new { message = "無權限取消共享此故事" });
+            // 允許創建者或該共享者自己移除共享
+            if (story.CreatorId != userId && targetUserId != userId)
+                return Unauthorized(new { message = "無權限取消共享" });
 
-            var share = await _context.StorySharedUsers.FirstOrDefaultAsync(su => su.StoryId == id && su.UserId == targetUserId);
-            if (share != null)
-            {
-                _context.StorySharedUsers.Remove(share);
-                await _context.SaveChangesAsync();
-            }
+            var share = await _context.StorySharedUsers
+                .FirstOrDefaultAsync(su => su.StoryId == id && su.UserId == targetUserId);
 
-            return Ok(new { message = "已取消共享" });
+            if (share == null)
+                return BadRequest(new { message = "該使用者未被共享此故事" });
+
+            _context.StorySharedUsers.Remove(share);
+            await _context.SaveChangesAsync();
+
+            return Ok(new { message = "已成功取消共享" });
         }
 
-        // 取得公開故事內容（不需登入）
+        // 取得公開故事列表
         [HttpGet("public/{publicId}")]
         public async Task<IActionResult> GetPublicStory(Guid publicId)
         {
-            var story = await _context.Stories.FirstOrDefaultAsync(s => s.PublicId == publicId && s.IsPublic);
+            var story = await _context.Stories
+                .Where(s => s.IsPublic && s.PublicId == publicId)
+                .Select(s => new
+                {
+                    s.PublicId,
+                    s.Title,
+                    s.Description,
+                    Creator = new { s.Creator.Name }, // 只回傳創建者的名字，不回傳 ID
+                    s.CreatedAt
+                })
+                .FirstOrDefaultAsync();
+
             if (story == null)
                 return NotFound(new { message = "找不到該公開故事" });
 
             return Ok(story);
         }
+
+
+        // 切換故事公開狀態
+        [Authorize] // 需要登入
+        [HttpPut("{id}/toggle-public")]
+        public async Task<IActionResult> TogglePublicStory(int id)
+        {
+            var userId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value!);
+            var story = await _context.Stories.FindAsync(id);
+
+            if (story == null || story.CreatorId != userId)
+                return Unauthorized(new { message = "無權限更改此故事的公開狀態" });
+
+            // 切換 IsPublic 狀態
+            story.IsPublic = !story.IsPublic;
+            await _context.SaveChangesAsync();
+
+            return Ok(new
+            {
+                message = $"故事公開狀態已變更為 {(story.IsPublic ? "公開" : "私人")}",
+                isPublic = story.IsPublic
+            });
+        }
+
     }
 }

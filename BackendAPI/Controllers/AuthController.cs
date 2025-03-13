@@ -79,6 +79,7 @@ namespace BackendAPI.Controllers
                 Name = userDto.Name,
                 CreatedAt = DateTime.UtcNow,
                 IsVerified = false,
+                UserCode = GenerateUserCode()
                 //EmailVerificationToken = verificationToken // 存入驗證 Token 上線才用
             };
 
@@ -105,7 +106,7 @@ namespace BackendAPI.Controllers
 
             do
             {
-                code = new string(Enumerable.Repeat(chars, 6)
+                code = new string(Enumerable.Repeat(chars, 8)
                     .Select(s => s[random.Next(s.Length)]).ToArray());
             } while (_context.Users.Any(u => u.UserCode == code)); // 確保唯一性
 
@@ -148,7 +149,7 @@ namespace BackendAPI.Controllers
         //}
 
 
-        // 登入 API
+        // 登入 API（產生 Access Token + Refresh Token）
         [HttpPost("login")]
         public async Task<IActionResult> Login([FromBody] LoginDto loginDto)
         {
@@ -197,14 +198,54 @@ namespace BackendAPI.Controllers
             user.LastFailedLogin = null;
             user.LastLogin = DateTime.UtcNow;
 
+            // 產生新的 Access Token
+            var accessToken = GenerateJwtToken(user);
+
+            // 產生新的 Refresh Token
+            string refreshToken = Guid.NewGuid().ToString();
+            string refreshTokenHash = BCrypt.Net.BCrypt.HashPassword(refreshToken);
+
+            // 清理過期 Refresh Token
+            try
+            {
+                const int batchSize = 1000;
+                int deletedRows;
+
+                do
+                {
+                    deletedRows = await _context.RefreshTokens
+                        .Where(rt => rt.ExpiresAt <= DateTime.UtcNow || rt.RevokedAt != null)
+                        .Take(batchSize)
+                        .ExecuteDeleteAsync();
+                } while (deletedRows > 0);
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogWarning($"[Login] 刪除過期 Refresh Token 時發生錯誤: {ex.Message}");
+            }
+
+            // 記錄裝置資訊
+            var refreshTokenEntity = new RefreshToken
+            {
+                UserId = user.Id,
+                TokenHash = refreshTokenHash,
+                DeviceInfo = Request.Headers["User-Agent"].ToString(),
+                ExpiresAt = DateTime.UtcNow.AddDays(7), // 設定 7 天過期
+                CreatedAt = DateTime.UtcNow
+            };  
+
+            // 儲存新的 Refresh Token
+            _context.RefreshTokens.Add(refreshTokenEntity);
             await _context.SaveChangesAsync();
 
-            // 產生 JWT Token
-            var token = GenerateJwtToken(user);
-            return Ok(new { token });
+            return Ok(new
+            {
+                accessToken,
+                refreshToken // 讓前端存起來，未來用來換取新的 Access Token
+            });
         }
 
-        // 產生 JWT Token
+        // 產生 Access Token
         private string GenerateJwtToken(User user)
         {
             var jwtSecret = _config["Jwt:Secret"] ?? throw new InvalidOperationException("JWT Secret is missing");
@@ -221,7 +262,7 @@ namespace BackendAPI.Controllers
                     new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()), // 使用者 ID
                     new Claim(ClaimTypes.Email, user.Email ?? "") // 使用者 Email
                 }),
-                Expires = DateTime.UtcNow.AddHours(12), // 設定 Token 12 小時後過期
+                Expires = DateTime.UtcNow.AddHours(2), // 設定 Access Token 2 小時後過期
                 Issuer = issuer,
                 Audience = audience,
                 SigningCredentials = new SigningCredentials(new SymmetricSecurityKey(key), SecurityAlgorithms.HmacSha256Signature)
@@ -230,6 +271,122 @@ namespace BackendAPI.Controllers
             var token = tokenHandler.CreateToken(tokenDescriptor);
             return tokenHandler.WriteToken(token);
         }
+
+        // 使用 Refresh Token 取得新的 Access Token
+        [HttpPost("refresh-token")]
+        public async Task<IActionResult> RefreshToken([FromBody] RefreshTokenRequest request)
+        {
+            if (string.IsNullOrEmpty(request.RefreshToken))
+                return BadRequest(new { message = "請提供 Refresh Token" });
+
+            // 先清理過期的 Refresh Token
+            try
+            {
+                const int batchSize = 1000;
+                int deletedRows;
+
+                do
+                {
+                    deletedRows = await _context.RefreshTokens
+                        .Where(rt => rt.ExpiresAt <= DateTime.UtcNow || rt.RevokedAt != null)
+                        .Take(batchSize)
+                        .ExecuteDeleteAsync();
+                } while (deletedRows > 0);
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogWarning($"[RefreshToken] 刪除過期 Refresh Token 時發生錯誤: {ex.Message}");
+            }
+
+            // 先取得該使用者所有有效的 Refresh Token
+            var storedToken = await _context.RefreshTokens
+                .Include(rt => rt.User)
+                .FirstOrDefaultAsync(rt => rt.ExpiresAt > DateTime.UtcNow && rt.RevokedAt == null);
+
+            if (storedToken == null || !BCrypt.Net.BCrypt.Verify(request.RefreshToken, storedToken.TokenHash))
+                return Unauthorized(new { message = "Refresh Token 無效或已過期，請重新登入" });
+
+            try
+            {
+                // 撤銷舊的 Refresh Token
+                storedToken.RevokedAt = DateTime.UtcNow;
+
+                // 產生新的 Refresh Token
+                string newRefreshToken = Guid.NewGuid().ToString();
+                string newRefreshTokenHash = BCrypt.Net.BCrypt.HashPassword(newRefreshToken);
+
+                var newToken = new RefreshToken
+                {
+                    UserId = storedToken.UserId,
+                    TokenHash = newRefreshTokenHash,
+                    DeviceInfo = storedToken.DeviceInfo,
+                    ExpiresAt = DateTime.UtcNow.AddDays(7),
+                    CreatedAt = DateTime.UtcNow
+                };
+
+                _context.RefreshTokens.Add(newToken);
+                await _context.SaveChangesAsync();
+
+                // 產生新的 Access Token
+                var newAccessToken = GenerateJwtToken(storedToken.User);
+
+                return Ok(new { accessToken = newAccessToken, refreshToken = newRefreshToken });
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogError($"[RefreshToken] 無法儲存新的 Refresh Token: {ex.Message}");
+                return StatusCode(500, new { message = "系統錯誤，請稍後再試" });
+            }
+        }
+
+        // 登出 API
+        [Authorize]
+        [HttpPost("logout")]
+        public async Task<IActionResult> Logout([FromBody] LogoutRequest request)
+        {
+            var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (userId == null || !int.TryParse(userId, out int parsedUserId))
+                return Unauthorized(new { message = "無效的 Token" });
+
+            if (string.IsNullOrEmpty(request.RefreshToken))
+                return BadRequest(new { message = "請提供 Refresh Token" });
+
+            // 先取得該使用者所有有效的 Refresh Token
+            var storedTokens = await _context.RefreshTokens
+                .Where(rt => rt.UserId == parsedUserId && rt.RevokedAt == null)
+                .ToListAsync();
+
+            // 在記憶體中驗證 Refresh Token
+            var storedToken = storedTokens.FirstOrDefault(rt => BCrypt.Net.BCrypt.Verify(request.RefreshToken, rt.TokenHash));
+
+            if (storedToken == null)            
+                return Unauthorized(new { message = "Refresh Token 無效或已撤銷" });
+
+
+            if (request.LogoutAllDevices)
+            {
+                // 標記該使用者所有 Refresh Token 為撤銷狀態
+                var validTokens = await _context.RefreshTokens
+                    .Where(rt => rt.UserId == parsedUserId && rt.RevokedAt == null)
+                    .ToListAsync();
+
+                foreach (var token in validTokens)
+                {
+                    token.RevokedAt = DateTime.UtcNow;
+                }
+            }
+            else
+            {
+                // 只撤銷當前 Refresh Token
+                storedToken.RevokedAt = DateTime.UtcNow;
+            }
+
+            await _context.SaveChangesAsync();
+
+            return Ok(new { message = request.LogoutAllDevices ? "已登出所有裝置" : "登出成功" });
+        }
+
+
 
         // 取得使用者個人資訊（需登入）
         [Authorize] // 需要 JWT Token
@@ -258,6 +415,7 @@ namespace BackendAPI.Controllers
                 user.Id,
                 Email = user.Email ?? "", // 確保 Email 不是 null
                 user.Name,
+                user.UserCode,
                 user.IsVerified,
                 user.CreatedAt,
                 loginProviders = providers.Count > 0 ? providers : new List<string> { "email" }

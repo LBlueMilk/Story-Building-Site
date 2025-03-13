@@ -80,7 +80,7 @@ namespace BackendAPI.Models
         // 使用者代碼，用於分享故事
         [Required]
         [Column("user_code")]
-        [MaxLength(10)]
+        [MaxLength(8)]
         public string UserCode { get; set; } = string.Empty;
 
 
