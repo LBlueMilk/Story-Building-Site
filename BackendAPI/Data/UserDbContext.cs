@@ -27,7 +27,11 @@ namespace BackendAPI.Data
             modelBuilder.Entity<User>()
                 .Property(u => u.CreatedAt)
                 .HasDefaultValueSql("CURRENT_TIMESTAMP");
-            
+
+            modelBuilder.Entity<User>()
+               .HasIndex(u => u.UserCode)
+               .IsUnique();
+
             modelBuilder.Entity<UserProvider>()
                 .HasIndex(up => new { up.UserId, up.Provider })
                 .IsUnique();
@@ -46,8 +50,8 @@ namespace BackendAPI.Data
                 .HasOne(s => s.Creator)
                 .WithMany(u => u.Stories)
                 .HasForeignKey(s => s.CreatorId)
-                .OnDelete(DeleteBehavior.Cascade);
-            
+                .OnDelete(DeleteBehavior.Cascade);            
+
             modelBuilder.Entity<StorySharedUser>()
                 .HasKey(ssu => new { ssu.StoryId, ssu.UserId });
 

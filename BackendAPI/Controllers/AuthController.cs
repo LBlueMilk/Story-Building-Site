@@ -11,6 +11,8 @@ using Microsoft.AspNetCore.Authorization;
 using BackendAPI.Services;
 using BackendAPI.Application.DTOs;
 using System.Text.RegularExpressions;
+using BackendAPI.Utils;
+
 
 namespace BackendAPI.Controllers
 {
@@ -45,8 +47,14 @@ namespace BackendAPI.Controllers
                 return BadRequest(new { message = "Email、密碼、名稱不能為空" });
             }
 
-            // 將 Email 轉為小寫
-            userDto.Email = userDto.Email.ToLower();
+            // 檢查 Email 格式
+            if (!EmailValidator.IsValidEmail(userDto.Email))
+            {
+                return BadRequest(new { message = "Email 格式不正確或為無效網域" });
+            }
+
+            // 檢查 Email 格式，去除空格並轉為小寫
+            userDto.Email = userDto.Email.Trim().ToLower();            
 
             // 檢查 Email 是否已經被註冊
             if (await _context.Users.AnyAsync(u => u.Email == userDto.Email))
@@ -54,6 +62,7 @@ namespace BackendAPI.Controllers
                 return BadRequest(new { message = "Email 已被註冊" });
             }
 
+            // 檢查密碼強度
             if (!IsPasswordValid(userDto.Password))
             {
                 return BadRequest(new { message = "密碼至少 8 碼，需包含大小寫字母、數字、特殊符號。" });
@@ -70,6 +79,7 @@ namespace BackendAPI.Controllers
                 Name = userDto.Name,
                 CreatedAt = DateTime.UtcNow,
                 IsVerified = false,
+                UserCode = GenerateUserCode()
                 //EmailVerificationToken = verificationToken // 存入驗證 Token 上線才用
             };
 
@@ -85,6 +95,22 @@ namespace BackendAPI.Controllers
             //);
 
             return Ok(new { message = "註冊成功，請查收 Email 進行驗證。" , verificationToken });
+        }
+
+        // 產生使用者代碼
+        private string GenerateUserCode()
+        {
+            const string chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+            var random = new Random();
+            string code;
+
+            do
+            {
+                code = new string(Enumerable.Repeat(chars, 8)
+                    .Select(s => s[random.Next(s.Length)]).ToArray());
+            } while (_context.Users.Any(u => u.UserCode == code)); // 確保唯一性
+
+            return code;
         }
 
         // 測試用驗證 Email API
@@ -123,18 +149,18 @@ namespace BackendAPI.Controllers
         //}
 
 
-        // 登入 API
+        // 登入 API（產生 Access Token + Refresh Token）
         [HttpPost("login")]
-        public async Task<IActionResult> Login([FromBody] User loginUser)
+        public async Task<IActionResult> Login([FromBody] LoginDto loginDto)
         {
             // 檢查 Email 和密碼是否為空
-            if (loginUser == null || string.IsNullOrWhiteSpace(loginUser.Email) || string.IsNullOrWhiteSpace(loginUser.PasswordHash))
+            if (string.IsNullOrWhiteSpace(loginDto.Email) || string.IsNullOrWhiteSpace(loginDto.Password))
             {
                 return BadRequest(new { message = "Email 和密碼不能為空" });
             }
 
             // 將 Email 轉為小寫
-            var email = loginUser.Email.ToLower();
+            var email = loginDto.Email.ToLower();
             // 取得使用者
             var user = await _context.Users.FirstOrDefaultAsync(u => u.Email == email);
 
@@ -159,7 +185,7 @@ namespace BackendAPI.Controllers
             }
 
             // 驗證密碼是否正確
-            if (!BCrypt.Net.BCrypt.Verify(loginUser.PasswordHash, user.PasswordHash))
+            if (!BCrypt.Net.BCrypt.Verify(loginDto.Password, user.PasswordHash))
             {
                 user.FailedLoginAttempts++;
                 user.LastFailedLogin = DateTime.UtcNow;
@@ -172,14 +198,54 @@ namespace BackendAPI.Controllers
             user.LastFailedLogin = null;
             user.LastLogin = DateTime.UtcNow;
 
+            // 產生新的 Access Token
+            var accessToken = GenerateJwtToken(user);
+
+            // 產生新的 Refresh Token
+            string refreshToken = Guid.NewGuid().ToString();
+            string refreshTokenHash = BCrypt.Net.BCrypt.HashPassword(refreshToken);
+
+            // 清理過期 Refresh Token
+            try
+            {
+                const int batchSize = 1000;
+                int deletedRows;
+
+                do
+                {
+                    deletedRows = await _context.RefreshTokens
+                        .Where(rt => rt.ExpiresAt <= DateTime.UtcNow || rt.RevokedAt != null)
+                        .Take(batchSize)
+                        .ExecuteDeleteAsync();
+                } while (deletedRows > 0);
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogWarning($"[Login] 刪除過期 Refresh Token 時發生錯誤: {ex.Message}");
+            }
+
+            // 記錄裝置資訊
+            var refreshTokenEntity = new RefreshToken
+            {
+                UserId = user.Id,
+                TokenHash = refreshTokenHash,
+                DeviceInfo = Request.Headers["User-Agent"].ToString(),
+                ExpiresAt = DateTime.UtcNow.AddDays(7), // 設定 7 天過期
+                CreatedAt = DateTime.UtcNow
+            };  
+
+            // 儲存新的 Refresh Token
+            _context.RefreshTokens.Add(refreshTokenEntity);
             await _context.SaveChangesAsync();
 
-            // 產生 JWT Token
-            var token = GenerateJwtToken(user);
-            return Ok(new { token });
+            return Ok(new
+            {
+                accessToken,
+                refreshToken // 讓前端存起來，未來用來換取新的 Access Token
+            });
         }
 
-        // 產生 JWT Token
+        // 產生 Access Token
         private string GenerateJwtToken(User user)
         {
             var jwtSecret = _config["Jwt:Secret"] ?? throw new InvalidOperationException("JWT Secret is missing");
@@ -196,7 +262,7 @@ namespace BackendAPI.Controllers
                     new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()), // 使用者 ID
                     new Claim(ClaimTypes.Email, user.Email ?? "") // 使用者 Email
                 }),
-                Expires = DateTime.UtcNow.AddHours(12), // 設定 Token 12 小時後過期
+                Expires = DateTime.UtcNow.AddHours(2), // 設定 Access Token 2 小時後過期
                 Issuer = issuer,
                 Audience = audience,
                 SigningCredentials = new SigningCredentials(new SymmetricSecurityKey(key), SecurityAlgorithms.HmacSha256Signature)
@@ -205,6 +271,122 @@ namespace BackendAPI.Controllers
             var token = tokenHandler.CreateToken(tokenDescriptor);
             return tokenHandler.WriteToken(token);
         }
+
+        // 使用 Refresh Token 取得新的 Access Token
+        [HttpPost("refresh-token")]
+        public async Task<IActionResult> RefreshToken([FromBody] RefreshTokenRequest request)
+        {
+            if (string.IsNullOrEmpty(request.RefreshToken))
+                return BadRequest(new { message = "請提供 Refresh Token" });
+
+            // 先清理過期的 Refresh Token
+            try
+            {
+                const int batchSize = 1000;
+                int deletedRows;
+
+                do
+                {
+                    deletedRows = await _context.RefreshTokens
+                        .Where(rt => rt.ExpiresAt <= DateTime.UtcNow || rt.RevokedAt != null)
+                        .Take(batchSize)
+                        .ExecuteDeleteAsync();
+                } while (deletedRows > 0);
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogWarning($"[RefreshToken] 刪除過期 Refresh Token 時發生錯誤: {ex.Message}");
+            }
+
+            // 先取得該使用者所有有效的 Refresh Token
+            var storedToken = await _context.RefreshTokens
+                .Include(rt => rt.User)
+                .FirstOrDefaultAsync(rt => rt.ExpiresAt > DateTime.UtcNow && rt.RevokedAt == null);
+
+            if (storedToken == null || !BCrypt.Net.BCrypt.Verify(request.RefreshToken, storedToken.TokenHash))
+                return Unauthorized(new { message = "Refresh Token 無效或已過期，請重新登入" });
+
+            try
+            {
+                // 撤銷舊的 Refresh Token
+                storedToken.RevokedAt = DateTime.UtcNow;
+
+                // 產生新的 Refresh Token
+                string newRefreshToken = Guid.NewGuid().ToString();
+                string newRefreshTokenHash = BCrypt.Net.BCrypt.HashPassword(newRefreshToken);
+
+                var newToken = new RefreshToken
+                {
+                    UserId = storedToken.UserId,
+                    TokenHash = newRefreshTokenHash,
+                    DeviceInfo = storedToken.DeviceInfo,
+                    ExpiresAt = DateTime.UtcNow.AddDays(7),
+                    CreatedAt = DateTime.UtcNow
+                };
+
+                _context.RefreshTokens.Add(newToken);
+                await _context.SaveChangesAsync();
+
+                // 產生新的 Access Token
+                var newAccessToken = GenerateJwtToken(storedToken.User);
+
+                return Ok(new { accessToken = newAccessToken, refreshToken = newRefreshToken });
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogError($"[RefreshToken] 無法儲存新的 Refresh Token: {ex.Message}");
+                return StatusCode(500, new { message = "系統錯誤，請稍後再試" });
+            }
+        }
+
+        // 登出 API
+        [Authorize]
+        [HttpPost("logout")]
+        public async Task<IActionResult> Logout([FromBody] LogoutRequest request)
+        {
+            var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (userId == null || !int.TryParse(userId, out int parsedUserId))
+                return Unauthorized(new { message = "無效的 Token" });
+
+            if (string.IsNullOrEmpty(request.RefreshToken))
+                return BadRequest(new { message = "請提供 Refresh Token" });
+
+            // 先取得該使用者所有有效的 Refresh Token
+            var storedTokens = await _context.RefreshTokens
+                .Where(rt => rt.UserId == parsedUserId && rt.RevokedAt == null)
+                .ToListAsync();
+
+            // 在記憶體中驗證 Refresh Token
+            var storedToken = storedTokens.FirstOrDefault(rt => BCrypt.Net.BCrypt.Verify(request.RefreshToken, rt.TokenHash));
+
+            if (storedToken == null)            
+                return Unauthorized(new { message = "Refresh Token 無效或已撤銷" });
+
+
+            if (request.LogoutAllDevices)
+            {
+                // 標記該使用者所有 Refresh Token 為撤銷狀態
+                var validTokens = await _context.RefreshTokens
+                    .Where(rt => rt.UserId == parsedUserId && rt.RevokedAt == null)
+                    .ToListAsync();
+
+                foreach (var token in validTokens)
+                {
+                    token.RevokedAt = DateTime.UtcNow;
+                }
+            }
+            else
+            {
+                // 只撤銷當前 Refresh Token
+                storedToken.RevokedAt = DateTime.UtcNow;
+            }
+
+            await _context.SaveChangesAsync();
+
+            return Ok(new { message = request.LogoutAllDevices ? "已登出所有裝置" : "登出成功" });
+        }
+
+
 
         // 取得使用者個人資訊（需登入）
         [Authorize] // 需要 JWT Token
@@ -233,6 +415,7 @@ namespace BackendAPI.Controllers
                 user.Id,
                 Email = user.Email ?? "", // 確保 Email 不是 null
                 user.Name,
+                user.UserCode,
                 user.IsVerified,
                 user.CreatedAt,
                 loginProviders = providers.Count > 0 ? providers : new List<string> { "email" }
@@ -258,23 +441,23 @@ namespace BackendAPI.Controllers
             bool hasChanges = false;
 
             // 檢查 Email 是否有效
-            if (updatedUser.Email != null) // 允許不變更 Email，但不能是空字串
+            if (!string.IsNullOrWhiteSpace(updatedUser.Email)) // 允許不變更 Email
             {
-                updatedUser.Email = updatedUser.Email.Trim(); // 避免前後空格
+                updatedUser.Email = updatedUser.Email.Trim().ToLower(); // 轉小寫 + 去除前後空格
 
-                // Email 不能是空字串
-                if (updatedUser.Email == "")
+                // 檢查 Email 是否為空
+                if (string.IsNullOrEmpty(updatedUser.Email))
                 {
                     return BadRequest(new { message = "Email 不能為空" });
                 }
 
                 // 檢查 Email 格式
-                if (!Regex.IsMatch(updatedUser.Email, @"^[^@\s]+@[^@\s]+\.[^@\s]+$"))
+                if (!EmailValidator.IsValidEmail(updatedUser.Email))
                 {
-                    return BadRequest(new { message = "Email 格式不正確" });
+                    return BadRequest(new { message = "Email 格式不正確或為無效網域" });
                 }
 
-                // **Email 變更時，檢查是否已被其他帳號使用**
+                // Email 變更時，檢查是否已被其他帳號使用
                 if (updatedUser.Email != user.Email)
                 {
                     bool emailExists = await _context.Users.AnyAsync(u => u.Email == updatedUser.Email && u.Id != user.Id);
@@ -294,7 +477,7 @@ namespace BackendAPI.Controllers
                 }
             }
 
-            // 只能修改 `Name`
+            // 檢查 Name 是否有效
             if (!string.IsNullOrWhiteSpace(updatedUser.Name) && updatedUser.Name != user.Name)
             {
                 user.Name = updatedUser.Name;
@@ -511,11 +694,14 @@ namespace BackendAPI.Controllers
         [HttpPost("cleanup")]
         public async Task<IActionResult> CleanupInactiveAccounts()
         {
-            int cleanupDays = int.TryParse(Environment.GetEnvironmentVariable("CLEANUP_THRESHOLD_DAYS"), out int days) ? days : 30;
+            int cleanupDays = Environment.GetEnvironmentVariable("CLEANUP_THRESHOLD_DAYS") is string envValue && int.TryParse(envValue, out int days)
+                ? days
+                : 30;
+
             var thresholdDate = DateTime.UtcNow.AddDays(-cleanupDays);
 
             var expiredUsers = await _context.Users
-                .Where(u => u.DeletedAt != null && u.DeletedAt < thresholdDate)
+                .Where(u => u.DeletedAt.HasValue && u.DeletedAt.Value < thresholdDate && !u.RestoredAt.HasValue)
                 .ToListAsync();
 
             if (!expiredUsers.Any())
@@ -527,28 +713,78 @@ namespace BackendAPI.Controllers
             await _context.SaveChangesAsync();
 
             // 在正式環境應該發送 Email 通知管理員
-            await _emailService.SendAsync("之後用自己的信箱", "帳號清理通知", $"已刪除 {expiredUsers.Count} 個過期帳號。");
+            //await _emailService.SendAsync("之後用自己的信箱", "帳號清理通知", $"已刪除 {expiredUsers.Count} 個過期帳號。");
 
-            return Ok();
+            return Ok(new { message = $"{expiredUsers.Count} 個過期帳戶已被刪除。" });
         }
 
-        [HttpPost("disconnect-provider")]
-        // 斷開登入方式 API
-        public async Task<IActionResult> ReconnectProvider(string provider, int userId)
+        // 連結與斷開 OAuth 帳號 API
+        [Authorize]
+        [HttpPost("toggle-provider")]
+        public async Task<IActionResult> ToggleProvider([FromBody] ToggleProviderDto request)
         {
-            var record = await _context.UserProviders
-                .FirstOrDefaultAsync(up => up.UserId == userId && up.Provider == provider);
+            // 取得當前用戶 ID
+            var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (userId == null || !int.TryParse(userId, out int parsedUserId))
+                return Unauthorized(new { message = "無效的 Token（找不到使用者 ID）" });
 
-            if (record != null)
+            // 查詢對應的 OAuth 記錄
+            var record = await _context.UserProviders
+                .FirstOrDefaultAsync(up => up.UserId == parsedUserId && up.Provider == request.Provider);
+
+            if (record == null)
             {
-                record.DisconnectedAt = null; // 重新連結，清除斷開時間
-                await _context.SaveChangesAsync();
-                return Ok(new { message = $"{provider} 已重新連結" });
+                return NotFound(new { message = "未找到對應的登入方式" });
             }
 
-            return NotFound(new { message = "未找到對應的登入方式" });
+            // 切換 `disconnected_at` 狀態
+            if (record.DisconnectedAt == null)
+            {
+                // OAuth 授權撤銷
+                if (!string.IsNullOrEmpty(record.ProviderId))
+                {
+                    try
+                    {
+                        await RevokeOAuthToken(record.Provider, record.ProviderId);
+                    }
+                    catch (Exception ex)
+                    {
+                        return StatusCode(500, new { message = $"取消 {record.Provider} 授權失敗: {ex.Message}" });
+                    }
+                }
+
+                // 設為已斷開
+                record.DisconnectedAt = DateTime.UtcNow;
+                await _context.SaveChangesAsync();
+                return Ok(new { message = $"{record.Provider} 已斷開連結" });
+            }
+            else
+            {
+                // 重新連結（清除斷開時間）
+                record.DisconnectedAt = null;
+                await _context.SaveChangesAsync();
+                return Ok(new { message = $"{record.Provider} 已重新連結" });
+            }
         }
 
+        // 通知 OAuth 取消授權
+        private async Task RevokeOAuthToken(string provider, string providerId)
+        {
+            string revokeUrl = provider switch
+            {
+                "google" => $"https://oauth2.googleapis.com/revoke?token={providerId}",
+                "facebook" => $"https://graph.facebook.com/me/permissions?access_token={providerId}",
+                _ => throw new ArgumentException("不支援的 OAuth 供應商")
+            };
+
+            using HttpClient client = new();
+            var response = await client.GetAsync(revokeUrl);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                throw new Exception($"無法取消 {provider} 授權，錯誤代碼: {response.StatusCode}");
+            }
+        }
 
     }
 }
