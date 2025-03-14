@@ -224,13 +224,16 @@ namespace BackendAPI.Controllers
                 _logger?.LogWarning($"[Login] 刪除過期 Refresh Token 時發生錯誤: {ex.Message}");
             }
 
+            // 設定過期時間
+            var refreshTokenExpiration = _config.GetValue<int>("Jwt:RefreshTokenExpiration");
+
             // 記錄裝置資訊
             var refreshTokenEntity = new RefreshToken
             {
                 UserId = user.Id,
                 TokenHash = refreshTokenHash,
                 DeviceInfo = Request.Headers["User-Agent"].ToString(),
-                ExpiresAt = DateTime.UtcNow.AddDays(7), // 設定 7 天過期
+                ExpiresAt = DateTime.UtcNow.AddDays(refreshTokenExpiration), // 使用 appsettings 設定的過期時間
                 CreatedAt = DateTime.UtcNow
             };  
 
@@ -254,6 +257,7 @@ namespace BackendAPI.Controllers
 
             var tokenHandler = new JwtSecurityTokenHandler();
             var key = Encoding.UTF8.GetBytes(jwtSecret);
+            var accessTokenExpiration = _config.GetValue<int>("Jwt:AccessTokenExpiration");
 
             var tokenDescriptor = new SecurityTokenDescriptor
             {
@@ -262,7 +266,7 @@ namespace BackendAPI.Controllers
                     new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()), // 使用者 ID
                     new Claim(ClaimTypes.Email, user.Email ?? "") // 使用者 Email
                 }),
-                Expires = DateTime.UtcNow.AddHours(2), // 設定 Access Token 2 小時後過期
+                Expires = DateTime.UtcNow.AddHours(accessTokenExpiration), // 使用 appsettings 設定的過期時間
                 Issuer = issuer,
                 Audience = audience,
                 SigningCredentials = new SigningCredentials(new SymmetricSecurityKey(key), SecurityAlgorithms.HmacSha256Signature)
@@ -314,13 +318,15 @@ namespace BackendAPI.Controllers
                 // 產生新的 Refresh Token
                 string newRefreshToken = Guid.NewGuid().ToString();
                 string newRefreshTokenHash = BCrypt.Net.BCrypt.HashPassword(newRefreshToken);
+                // 設定過期時間
+                var refreshTokenExpiration = _config.GetValue<int>("Jwt:RefreshTokenExpiration");
 
                 var newToken = new RefreshToken
                 {
                     UserId = storedToken.UserId,
                     TokenHash = newRefreshTokenHash,
                     DeviceInfo = storedToken.DeviceInfo,
-                    ExpiresAt = DateTime.UtcNow.AddDays(7),
+                    ExpiresAt = DateTime.UtcNow.AddDays(refreshTokenExpiration), // 使用 appsettings 設定的過期時間
                     CreatedAt = DateTime.UtcNow
                 };
 
@@ -356,32 +362,26 @@ namespace BackendAPI.Controllers
                 .Where(rt => rt.UserId == parsedUserId && rt.RevokedAt == null)
                 .ToListAsync();
 
-            // 在記憶體中驗證 Refresh Token
-            var storedToken = storedTokens.FirstOrDefault(rt => BCrypt.Net.BCrypt.Verify(request.RefreshToken, rt.TokenHash));
+            
+            var tokenToRevoke = storedTokens.FirstOrDefault(rt => BCrypt.Net.BCrypt.Verify(request.RefreshToken, rt.TokenHash));
 
-            if (storedToken == null)            
+            if (tokenToRevoke == null)
                 return Unauthorized(new { message = "Refresh Token 無效或已撤銷" });
 
 
             if (request.LogoutAllDevices)
             {
-                // 標記該使用者所有 Refresh Token 為撤銷狀態
-                var validTokens = await _context.RefreshTokens
-                    .Where(rt => rt.UserId == parsedUserId && rt.RevokedAt == null)
-                    .ToListAsync();
-
-                foreach (var token in validTokens)
-                {
-                    token.RevokedAt = DateTime.UtcNow;
-                }
+                // 撤銷該使用者所有 Refresh Token（登出所有裝置）
+                await _context.RefreshTokens
+                    .Where(rt => rt.UserId == parsedUserId)
+                    .ExecuteDeleteAsync();
             }
             else
             {
                 // 只撤銷當前 Refresh Token
-                storedToken.RevokedAt = DateTime.UtcNow;
+                tokenToRevoke.RevokedAt = DateTime.UtcNow;
+                await _context.SaveChangesAsync();
             }
-
-            await _context.SaveChangesAsync();
 
             return Ok(new { message = request.LogoutAllDevices ? "已登出所有裝置" : "登出成功" });
         }

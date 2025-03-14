@@ -27,9 +27,9 @@ namespace BackendAPI.Extensions
                         ValidateIssuerSigningKey = true,
                         IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSecret)),
                         ValidateIssuer = false, // 目前是 `false`，表示不檢查 Token 來自哪裡，雲端後修改
-                        //ValidIssuer = "網址", // 設定發行者名稱
+                        //ValidIssuer = "BackendAPI", // 設定發行者名稱
                         ValidateAudience = false, // 目前是 `false`，表示不檢查 Token 是給誰的，雲端後修改         
-                        //ValidAudience = "", // 設定接收者名稱
+                        //ValidAudience = "BackendAPIClients", // 設定接收者名稱
                         ValidateLifetime = true, // 檢查 Token 是否過期
                         ClockSkew = TimeSpan.Zero // 取消預設 5 分鐘誤差
                     };
