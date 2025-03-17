@@ -20,7 +20,16 @@ builder.Services.ConfigureServices(builder.Configuration);
 // Extensions資料夾下的SwaggerExtensions.cs檔案
 builder.Services.ConfigureSwagger();
 
-
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("AllowLocalhost3000",
+        builder => builder
+            .WithOrigins("http://localhost:3000")
+            .AllowAnyHeader()
+            .AllowAnyMethod()
+            .AllowCredentials()
+    );
+});
 
 
 
@@ -35,6 +44,11 @@ if (app.Environment.IsDevelopment())
     app.UseSwagger();
     app.UseSwaggerUI();
 }
+
+
+app.UseCors("AllowLocalhost3000");
+
+
 
 app.UseAuthentication(); // **一定要在 Authorization 之前執行**
 app.UseHttpsRedirection();
