@@ -52,49 +52,58 @@ namespace BackendAPI.Controllers
         [HttpPost]
         public async Task<IActionResult> CreateStory([FromBody] CreateStoryDto storyDto)
         {
-            var userId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value!);
-
-            // 檢查標題是否為空
-            if (string.IsNullOrWhiteSpace(storyDto.Title))
+            try
             {
-                return BadRequest(new { message = "故事標題不能為空" });
+                var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+                if (userIdClaim == null || !int.TryParse(userIdClaim, out int userId))
+                {
+                    return Unauthorized(new { message = "無效的 Token" });
+                }
+                Console.WriteLine($"userId: {userId}");
+
+                // 檢查標題
+                if (string.IsNullOrWhiteSpace(storyDto.Title))
+                {
+                    return BadRequest(new { message = "故事標題不能為空" });
+                }
+
+                string? description = string.IsNullOrWhiteSpace(storyDto.Description) ? null : storyDto.Description.Trim();
+                bool isPublic = storyDto.IsPublic ?? false;
+
+                var newStory = new Story
+                {
+                    CreatorId = userId,
+                    Title = storyDto.Title.Trim(),
+                    Description = description,
+                    CreatedAt = DateTime.UtcNow,
+                    UpdatedAt = DateTime.UtcNow,
+                    PublicId = Guid.NewGuid(),
+                    IsPublic = isPublic
+                };
+
+                _context.Stories.Add(newStory);
+                await _context.SaveChangesAsync();
+
+                var response = new StoryResponseDto
+                {
+                    Id = newStory.Id,
+                    PublicId = newStory.PublicId,
+                    Title = newStory.Title,
+                    Description = newStory.Description,
+                    IsPublic = newStory.IsPublic,
+                    CreatedAt = newStory.CreatedAt,
+                    UpdatedAt = newStory.UpdatedAt
+                };
+
+                return Ok(response);
             }
-
-            // 清理 Description（允許 null，但如果有值就 Trim）
-            string? description = string.IsNullOrWhiteSpace(storyDto.Description) ? null : storyDto.Description.Trim();
-
-            // 確保 IsPublic 有值，預設為 false
-            bool isPublic = storyDto.IsPublic ?? false;
-
-            // 創建新故事
-            var newStory = new Story
+            catch (Exception ex)
             {
-                CreatorId = userId,
-                Title = storyDto.Title.Trim(),  // 確保標題沒有前後空格
-                Description = description,
-                CreatedAt = DateTime.UtcNow,
-                UpdatedAt = DateTime.UtcNow,  // 初始化 UpdatedAt
-                PublicId = Guid.NewGuid(),
-                IsPublic = isPublic
-            };
-
-            _context.Stories.Add(newStory);
-            await _context.SaveChangesAsync();
-
-            // 回傳新故事的 Response
-            var response = new StoryResponseDto
-            {
-                Id = newStory.Id,
-                PublicId = newStory.PublicId,
-                Title = newStory.Title,
-                Description = newStory.Description,
-                IsPublic = newStory.IsPublic,
-                CreatedAt = newStory.CreatedAt,
-                UpdatedAt = newStory.UpdatedAt
-            };
-
-            return Ok(response);
+                Console.WriteLine($"CreateStory 發生錯誤: {ex.Message}");
+                return StatusCode(500, new { message = "伺服器內部錯誤，請稍後再試" });
+            }
         }
+
 
         // 更新故事
         [Authorize]
