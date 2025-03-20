@@ -8,6 +8,8 @@ using Microsoft.OpenApi.Models;
 using System.Security.Cryptography;
 using System.Text;
 using static BackendAPI.Controllers.AuthController;
+using Microsoft.AspNetCore.Diagnostics.EntityFrameworkCore;
+
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -19,6 +21,12 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.ConfigureServices(builder.Configuration);
 // Extensions資料夾下的SwaggerExtensions.cs檔案
 builder.Services.ConfigureSwagger();
+// 偵測和診斷 EF Core 移轉的錯誤
+builder.Services.AddDatabaseDeveloperPageExceptionFilter();
+// 設定日誌
+builder.Logging.ClearProviders();
+builder.Logging.AddConsole();
+
 
 builder.Services.AddCors(options =>
 {
@@ -32,10 +40,6 @@ builder.Services.AddCors(options =>
 });
 
 
-
-
-
-
 var app = builder.Build();
 
 // 設定 HTTP 請求處理流程
@@ -43,15 +47,15 @@ if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
     app.UseSwaggerUI();
+    app.UseDeveloperExceptionPage();
 }
 
 
 app.UseCors("AllowLocalhost3000");
 
 
-
 app.UseAuthentication(); // **一定要在 Authorization 之前執行**
-app.UseHttpsRedirection();
+//app.UseHttpsRedirection();
 app.UseAuthorization();
 
 app.MapControllers();

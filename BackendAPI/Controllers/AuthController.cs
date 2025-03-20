@@ -54,7 +54,7 @@ namespace BackendAPI.Controllers
             }
 
             // 檢查 Email 格式，去除空格並轉為小寫
-            userDto.Email = userDto.Email.Trim().ToLower();            
+            userDto.Email = userDto.Email.Trim().ToLower();
 
             // 檢查 Email 是否已經被註冊
             if (await _context.Users.AnyAsync(u => u.Email == userDto.Email))
@@ -94,7 +94,36 @@ namespace BackendAPI.Controllers
             //    $"請點擊以下連結驗證你的 Email：<a href='{verificationLink}'>驗證 Email</a>"
             //);
 
-            return Ok(new { message = "註冊成功，請查收 Email 進行驗證。" , verificationToken });
+            // 產生 Access Token
+            var accessToken = GenerateJwtToken(newUser);
+
+            // 產生 Refresh Token
+            string refreshToken = Guid.NewGuid().ToString();
+            string refreshTokenHash = BCrypt.Net.BCrypt.HashPassword(refreshToken);
+
+            var refreshTokenEntity = new RefreshToken
+            {
+                UserId = newUser.Id,
+                TokenHash = refreshTokenHash,
+                DeviceInfo = Request.Headers["User-Agent"].ToString(),
+                ExpiresAt = DateTime.UtcNow.AddDays(_config.GetValue<int>("Jwt:RefreshTokenExpiration")),
+                CreatedAt = DateTime.UtcNow
+            };
+
+            _context.RefreshTokens.Add(refreshTokenEntity);
+            await _context.SaveChangesAsync();
+
+            // 回傳 Token & User
+            return Ok(new
+            {
+                accessToken,
+                refreshToken,
+                user = new
+                {
+                    name = newUser.Name ?? "",
+                    stories = new List<object>() // 新註冊者尚無故事
+                }
+            });
         }
 
         // 產生使用者代碼
@@ -153,99 +182,118 @@ namespace BackendAPI.Controllers
         [HttpPost("login")]
         public async Task<IActionResult> Login([FromBody] LoginDto loginDto)
         {
-            // 檢查 Email 和密碼是否為空
-            if (string.IsNullOrWhiteSpace(loginDto.Email) || string.IsNullOrWhiteSpace(loginDto.Password))
-            {
-                return BadRequest(new { message = "Email 和密碼不能為空" });
-            }
-
-            // 將 Email 轉為小寫
-            var email = loginDto.Email.ToLower();
-            // 取得使用者
-            var user = await _context.Users.FirstOrDefaultAsync(u => u.Email == email);
-
-            // 檢查使用者是否存在
-            if (user == null)
-            {
-                return Unauthorized(new { message = "登入失敗，請檢查您的帳號或密碼" });
-            }
-
-            // 檢查帳戶是否已鎖定
-            if (user.FailedLoginAttempts >= MaxFailedAttempts &&
-                user.LastFailedLogin.HasValue &&
-                (DateTime.UtcNow - user.LastFailedLogin.Value).TotalMinutes < LockoutMinutes)
-            {
-                return Unauthorized(new { message = $"帳戶已鎖定，請稍後再試。" });
-            }
-
-            // 檢查密碼是否存在，避免 OAuth 使用者嘗試密碼登入
-            if (string.IsNullOrEmpty(user.PasswordHash))
-            {
-                return Unauthorized(new { message = "此帳戶無法使用密碼登入，請使用 OAuth 或重設密碼" });
-            }
-
-            // 驗證密碼是否正確
-            if (!BCrypt.Net.BCrypt.Verify(loginDto.Password, user.PasswordHash))
-            {
-                user.FailedLoginAttempts++;
-                user.LastFailedLogin = DateTime.UtcNow;
-                await _context.SaveChangesAsync();
-                return Unauthorized(new { message = "登入失敗，請檢查您的帳號或密碼" });
-            }
-
-            // 登入成功，重置失敗次數，更新最後登入時間
-            user.FailedLoginAttempts = 0;
-            user.LastFailedLogin = null;
-            user.LastLogin = DateTime.UtcNow;
-
-            // 產生新的 Access Token
-            var accessToken = GenerateJwtToken(user);
-
-            // 產生新的 Refresh Token
-            string refreshToken = Guid.NewGuid().ToString();
-            string refreshTokenHash = BCrypt.Net.BCrypt.HashPassword(refreshToken);
-
-            // 清理過期 Refresh Token
+            _logger.LogInformation("[Login] 收到登入請求: {Email}", loginDto.Email);
             try
             {
-                const int batchSize = 1000;
-                int deletedRows;
-
-                do
+                // 檢查 Email 和密碼是否為空
+                if (string.IsNullOrWhiteSpace(loginDto.Email) || string.IsNullOrWhiteSpace(loginDto.Password))
                 {
-                    deletedRows = await _context.RefreshTokens
-                        .Where(rt => rt.ExpiresAt <= DateTime.UtcNow || rt.RevokedAt != null)
-                        .Take(batchSize)
-                        .ExecuteDeleteAsync();
-                } while (deletedRows > 0);
+                    return BadRequest(new { message = "Email 和密碼不能為空" });
+                }
+
+                // 將 Email 轉為小寫
+                var email = loginDto.Email.ToLower();
+                // 取得使用者
+                var user = await _context.Users
+                    .Include(u => u.Stories.Where(s => !s.DeletedAt.HasValue)) // 只取未刪除的故事
+                    .FirstOrDefaultAsync(u => u.Email == email);
+
+                // 檢查使用者是否存在
+                if (user == null)
+                {
+                    _logger.LogWarning("[Login] 找不到使用者: {Email}", email);
+                    return Unauthorized(new { message = "登入失敗，請檢查您的帳號或密碼" });
+                }
+
+                // 檢查帳戶是否已鎖定
+                if (user.FailedLoginAttempts >= MaxFailedAttempts &&
+                    user.LastFailedLogin.HasValue &&
+                    (DateTime.UtcNow - user.LastFailedLogin.Value).TotalMinutes < LockoutMinutes)
+                {
+                    return Unauthorized(new { message = $"帳戶已鎖定，請稍後再試。" });
+                }
+
+                // 檢查密碼是否存在，避免 OAuth 使用者嘗試密碼登入
+                if (string.IsNullOrEmpty(user.PasswordHash))
+                {
+                    return Unauthorized(new { message = "此帳戶無法使用密碼登入，請使用 OAuth 或重設密碼" });
+                }
+
+                // 驗證密碼是否正確
+                if (!BCrypt.Net.BCrypt.Verify(loginDto.Password, user.PasswordHash))
+                {
+                    user.FailedLoginAttempts++;
+                    user.LastFailedLogin = DateTime.UtcNow;
+                    await _context.SaveChangesAsync();
+                    return Unauthorized(new { message = "登入失敗，請檢查您的帳號或密碼" });
+                }
+
+                // 登入成功，重置失敗次數，更新最後登入時間
+                user.FailedLoginAttempts = 0;
+                user.LastFailedLogin = null;
+                user.LastLogin = DateTime.UtcNow;
+
+                // 產生新的 Access Token
+                var accessToken = GenerateJwtToken(user);
+
+                // 產生新的 Refresh Token
+                string refreshToken = Guid.NewGuid().ToString();
+                string refreshTokenHash = BCrypt.Net.BCrypt.HashPassword(refreshToken);
+
+                // 清理過期 Refresh Token
+                try
+                {
+                    const int batchSize = 1000;
+                    int deletedRows;
+
+                    do
+                    {
+                        deletedRows = await _context.RefreshTokens
+                            .Where(rt => rt.ExpiresAt <= DateTime.UtcNow || rt.RevokedAt != null)
+                            .Take(batchSize)
+                            .ExecuteDeleteAsync();
+                    } while (deletedRows > 0);
+                }
+                catch (Exception ex)
+                {
+                    _logger?.LogWarning($"[Login] 刪除過期 Refresh Token 時發生錯誤: {ex.Message}");
+                }
+
+                // 設定過期時間
+                var refreshTokenExpiration = _config.GetValue<int>("Jwt:RefreshTokenExpiration");
+
+                // 記錄裝置資訊
+                var refreshTokenEntity = new RefreshToken
+                {
+                    UserId = user.Id,
+                    TokenHash = refreshTokenHash,
+                    DeviceInfo = Request.Headers["User-Agent"].ToString(),
+                    ExpiresAt = DateTime.UtcNow.AddDays(refreshTokenExpiration), // 使用 appsettings 設定的過期時間
+                    CreatedAt = DateTime.UtcNow
+                };
+
+                // 儲存新的 Refresh Token
+                _context.RefreshTokens.Add(refreshTokenEntity);
+                await _context.SaveChangesAsync();
+
+                return Ok(new
+                {
+                    accessToken,
+                    refreshToken, // 讓前端存起來，未來用來換取新的 Access Token
+                    user = new
+                    {
+                        name = user.Name ?? "",
+                        stories = user.Stories.Select(s => new { id = s.Id, title = s.Title }).ToList()
+                    }
+                });
             }
+            // 登入失敗
             catch (Exception ex)
             {
-                _logger?.LogWarning($"[Login] 刪除過期 Refresh Token 時發生錯誤: {ex.Message}");
+                Console.WriteLine("[Login API] 發生例外: " + ex.Message);
+                Console.WriteLine(ex.StackTrace);
+                return StatusCode(500, new { message = "登入過程發生錯誤" });
             }
-
-            // 設定過期時間
-            var refreshTokenExpiration = _config.GetValue<int>("Jwt:RefreshTokenExpiration");
-
-            // 記錄裝置資訊
-            var refreshTokenEntity = new RefreshToken
-            {
-                UserId = user.Id,
-                TokenHash = refreshTokenHash,
-                DeviceInfo = Request.Headers["User-Agent"].ToString(),
-                ExpiresAt = DateTime.UtcNow.AddDays(refreshTokenExpiration), // 使用 appsettings 設定的過期時間
-                CreatedAt = DateTime.UtcNow
-            };  
-
-            // 儲存新的 Refresh Token
-            _context.RefreshTokens.Add(refreshTokenEntity);
-            await _context.SaveChangesAsync();
-
-            return Ok(new
-            {
-                accessToken,
-                refreshToken // 讓前端存起來，未來用來換取新的 Access Token
-            });
         }
 
         // 產生 Access Token
@@ -362,7 +410,7 @@ namespace BackendAPI.Controllers
                 .Where(rt => rt.UserId == parsedUserId && rt.RevokedAt == null)
                 .ToListAsync();
 
-            
+
             var tokenToRevoke = storedTokens.FirstOrDefault(rt => BCrypt.Net.BCrypt.Verify(request.RefreshToken, rt.TokenHash));
 
             if (tokenToRevoke == null)
@@ -527,8 +575,8 @@ namespace BackendAPI.Controllers
                     return NotFound(new { message = "找不到使用者" });
 
                 // 檢查此 Token 是否已經被使用
-                if (await _context.ResetPasswordTokens.AnyAsync(t => t.UserId == user.Id))                
-                    return Unauthorized(new { message = "此密碼重設連結已經被使用，請重新申請。" });                
+                if (await _context.ResetPasswordTokens.AnyAsync(t => t.UserId == user.Id))
+                    return Unauthorized(new { message = "此密碼重設連結已經被使用，請重新申請。" });
 
                 // 檢查密碼強度
                 if (!IsPasswordValid(request.NewPassword))
@@ -536,7 +584,7 @@ namespace BackendAPI.Controllers
 
                 // 檢查新密碼是否與舊密碼相同
                 if (BCrypt.Net.BCrypt.Verify(request.NewPassword, user.PasswordHash))
-                    return BadRequest(new { message = "新密碼不能與舊密碼相同" });                
+                    return BadRequest(new { message = "新密碼不能與舊密碼相同" });
 
                 // 使用 Transaction 確保一致性
                 await using var transaction = await _context.Database.BeginTransactionAsync();
@@ -683,7 +731,7 @@ namespace BackendAPI.Controllers
                 return BadRequest(new { message = "帳號未刪除，無需還原" });
 
             // 清除 deleted_at
-            user.DeletedAt = null; 
+            user.DeletedAt = null;
             user.RestoredAt = DateTime.UtcNow;
 
             await _context.SaveChangesAsync();
