@@ -21,7 +21,7 @@ namespace BackendAPI.Models
         public string Title { get; set; } // 故事標題
 
         [Column("description")]
-        public string Description { get; set; } // 故事描述
+        public string? Description { get; set; } // 故事描述 (可為 NULL)
 
         [Column("is_public")]
         public bool IsPublic { get; set; } = false; // 是否公開

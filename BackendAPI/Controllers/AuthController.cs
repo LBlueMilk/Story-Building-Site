@@ -536,11 +536,31 @@ namespace BackendAPI.Controllers
             {
                 _context.Users.Update(user);
                 await _context.SaveChangesAsync();
-                return Ok(new { message = "個人資料更新成功，若變更 Email，請前往驗證" });
+                return Ok(new { message = "個人資料更新成功，若變更 Email 請前往驗證" });
             }
 
             return Ok(new { message = "沒有變更，無需更新" });
         }
+
+        // 驗證密碼 API
+        [Authorize]
+        [HttpPost("verify-password")]
+        public async Task<IActionResult> VerifyPassword([FromBody] VerifyPasswordDto request)
+        {
+            var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (userId == null || !int.TryParse(userId, out int parsedUserId))
+                return Unauthorized(new { message = "無效的 Token" });
+
+            var user = await _context.Users.FindAsync(parsedUserId);
+            if (user == null || string.IsNullOrEmpty(user.PasswordHash))
+                return Unauthorized(new { message = "無效帳號" });
+
+            if (!BCrypt.Net.BCrypt.Verify(request.Password, user.PasswordHash))
+                return Unauthorized(new { message = "密碼錯誤" });
+
+            return Ok(new { message = "密碼驗證成功" });
+        }
+
 
         // 重設密碼 API
         [HttpPost("reset-password")]
