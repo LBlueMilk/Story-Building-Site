@@ -17,7 +17,7 @@ namespace BackendAPI.Controllers
         public StoryController(UserDbContext context)
         {
             _context = context;
-        }        
+        }
 
         // 取得使用者的所有故事（包含自己創建 & 共享給他的）但排除已刪除的
         [Authorize]
@@ -29,6 +29,8 @@ namespace BackendAPI.Controllers
 
             // 查詢故事
             var stories = await _context.Stories
+                .Include(s => s.SharedUsers)
+                    .ThenInclude(su => su.User)
                 .Where(s =>
                     s.DeletedAt == null &&  // 先確保沒有刪除
                     (s.CreatorId == userId || s.SharedUsers.Any(su => su.UserId == userId)) // 使用者擁有權限
@@ -40,7 +42,12 @@ namespace BackendAPI.Controllers
                     Title = s.Title,
                     Description = s.Description,
                     IsPublic = s.IsPublic,
-                    CreatedAt = s.CreatedAt
+                    CreatedAt = s.CreatedAt,
+                    SharedWith = s.SharedUsers.Select(u => new SharedUserDto
+                    {
+                        Email = u.User.Email,
+                        Name = u.User.Name
+                    }).ToList()
                 })
                 .ToListAsync();
 
@@ -331,6 +338,10 @@ namespace BackendAPI.Controllers
 
             var targetUserId = storyWithTargetUser.TargetUser.Id;
 
+            // 禁止自己分享給自己
+            if (targetUserId == userId)
+                return BadRequest(new { message = "無法將故事分享給自己" });
+
             // 檢查是否已經共享過
             bool alreadyShared = await _context.StorySharedUsers.AnyAsync(su => su.StoryId == id && su.UserId == targetUserId);
             if (alreadyShared)
@@ -344,7 +355,16 @@ namespace BackendAPI.Controllers
             });
 
             await _context.SaveChangesAsync();
-            return Ok(new { message = $"已成功共享故事給 {userCode}" });
+            return Ok(new
+            {
+                message = $"已成功共享故事給 {storyWithTargetUser.TargetUser.Name}",
+                sharedUser = new
+                {
+                    storyWithTargetUser.TargetUser.Id,
+                    storyWithTargetUser.TargetUser.Name,
+                    storyWithTargetUser.TargetUser.Email
+                }
+            });
         }
 
         // 產生共享連結（允許在 Token 被使用後立即重新產生）

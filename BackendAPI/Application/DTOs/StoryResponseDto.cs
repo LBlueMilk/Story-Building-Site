@@ -10,6 +10,8 @@
         public DateTime CreatedAt { get; set; }  // 創建時間
         public DateTime? UpdatedAt { get; set; }  // 最後更新時間（可為 NULL）
         public DateTime? DeletedAt { get; set; }  // 新增：刪除時間
+        public List<SharedUserDto> SharedWith { get; set; } = new();  // 新增欄位
+
     }
 
 }
