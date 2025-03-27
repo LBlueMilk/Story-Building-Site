@@ -19,7 +19,7 @@ namespace BackendAPI.Controllers
             _context = context;
         }
 
-        // 取得使用者的所有故事（包含自己創建 & 共享給他的）但排除已刪除的
+        // 取得使用者的所有故事（自己創建）但排除已刪除的
         [Authorize]
         [HttpGet]
         public async Task<IActionResult> GetStories()
@@ -33,7 +33,7 @@ namespace BackendAPI.Controllers
                     .ThenInclude(su => su.User)
                 .Where(s =>
                     s.DeletedAt == null &&  // 先確保沒有刪除
-                    (s.CreatorId == userId || s.SharedUsers.Any(su => su.UserId == userId)) // 使用者擁有權限
+                    s.CreatorId == userId
                 )
                 .Select(s => new StoryResponseDto
                 {
@@ -43,11 +43,54 @@ namespace BackendAPI.Controllers
                     Description = s.Description,
                     IsPublic = s.IsPublic,
                     CreatedAt = s.CreatedAt,
-                    SharedWith = s.SharedUsers.Select(u => new SharedUserDto
+                    sharedUsers = s.SharedUsers.Select(u => new SharedUserDto
                     {
                         Email = u.User.Email,
                         Name = u.User.Name
                     }).ToList()
+                })
+                .ToListAsync();
+
+            return Ok(stories);
+        }
+
+        // 自己分享&別人分享 給自己的故事
+        [Authorize]
+        [HttpGet("shared/all")]
+        public async Task<IActionResult> GetAllSharedStories()
+        {
+            var userId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value!);
+
+            var stories = await _context.Stories
+                .Include(s => s.Creator)
+                .Include(s => s.SharedUsers)
+                    .ThenInclude(su => su.User)
+                .Where(s =>
+                    s.DeletedAt == null &&
+                    (
+                        // 自己分享出去的故事（自己是創建者 & 有分享對象）
+                        (s.CreatorId == userId && s.SharedUsers.Any()) ||
+
+                        // 別人分享給我的故事（自己不是創建者，但在共享名單內）
+                        (s.CreatorId != userId && s.SharedUsers.Any(su => su.UserId == userId))
+                    )
+                )
+                .Select(s => new StoryResponseDto
+                {
+                    Id = s.Id,
+                    PublicId = s.PublicId,
+                    Title = s.Title,
+                    Description = s.Description,
+                    IsPublic = s.IsPublic,
+                    CreatedAt = s.CreatedAt,
+                    sharedUsers = s.SharedUsers.Select(u => new SharedUserDto
+                    {
+                        Email = u.User.Email,
+                        Name = u.User.Name
+                    }).ToList(),
+                    CreatorId = s.CreatorId,
+                    CreatorName = s.Creator.Name,
+                    CreatorEmail = s.Creator.Email
                 })
                 .ToListAsync();
 
