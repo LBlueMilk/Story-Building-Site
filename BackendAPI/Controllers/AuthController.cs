@@ -120,6 +120,7 @@ namespace BackendAPI.Controllers
                 refreshToken,
                 user = new
                 {
+                    id = newUser.Id,
                     name = newUser.Name ?? "",
                     stories = new List<object>() // 新註冊者尚無故事
                 }
@@ -282,6 +283,7 @@ namespace BackendAPI.Controllers
                     refreshToken, // 讓前端存起來，未來用來換取新的 Access Token
                     user = new
                     {
+                        id = user.Id,
                         name = user.Name ?? "",
                         stories = user.Stories.Select(s => new { id = s.Id, title = s.Title }).ToList()
                     }
