@@ -29,6 +29,7 @@ namespace BackendAPI.Controllers
 
             // 查詢故事
             var stories = await _context.Stories
+                .Include(s => s.Creator)
                 .Include(s => s.SharedUsers)
                     .ThenInclude(su => su.User)
                 .Where(s =>
@@ -43,6 +44,7 @@ namespace BackendAPI.Controllers
                     Description = s.Description,
                     IsPublic = s.IsPublic,
                     CreatedAt = s.CreatedAt,
+                    CreatorEmail = s.Creator.Email,
                     sharedUsers = s.SharedUsers.Select(u => new SharedUserDto
                     {
                         Email = u.User.Email,
