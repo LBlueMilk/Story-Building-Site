@@ -285,6 +285,7 @@ namespace BackendAPI.Controllers
                     {
                         id = user.Id,
                         name = user.Name ?? "",
+                        deleted_at = user.DeletedAt,
                         stories = user.Stories.Select(s => new { id = s.Id, title = s.Title }).ToList()
                     }
                 });
