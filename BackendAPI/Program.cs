@@ -9,6 +9,9 @@ using System.Security.Cryptography;
 using System.Text;
 using static BackendAPI.Controllers.AuthController;
 using Microsoft.AspNetCore.Diagnostics.EntityFrameworkCore;
+using BackendAPI.Services.Storage;
+using BackendAPI.Services.Database;
+using BackendAPI.Services.User;
 
 
 var builder = WebApplication.CreateBuilder(args);
@@ -26,6 +29,16 @@ builder.Services.AddDatabaseDeveloperPageExceptionFilter();
 // 設定日誌
 builder.Logging.ClearProviders();
 builder.Logging.AddConsole();
+
+// 註冊使用者服務，用來取得目前登入者資訊與 Provider 類型（Google 或註冊用戶）
+builder.Services.AddScoped<IUserService, UserService>();
+// 註冊故事資料服務，負責 PostgreSQL 資料存取（一般註冊帳號會使用這個服務）
+builder.Services.AddScoped<IStoryDataService, StoryDataService>();
+// 註冊智慧儲存服務，根據使用者身分自動選擇儲存到 Google Sheets 或 PostgreSQL
+builder.Services.AddScoped<IStorageService, SmartStorageService>();
+// 註冊 HttpContextAccessor，讓後端服務（如 SmartStorageService）可以取得目前的 HttpContext（用於判斷登入者資訊）
+builder.Services.AddHttpContextAccessor();
+
 
 
 builder.Services.AddCors(options =>

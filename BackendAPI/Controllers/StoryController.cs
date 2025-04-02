@@ -337,10 +337,11 @@ namespace BackendAPI.Controllers
 
             // 查詢故事
             var story = await _context.Stories
-                .Where(s => s.DeletedAt == null) // 過濾已刪除
+                .Include(s => s.SharedUsers)
+                .Where(s => s.DeletedAt == null)
                 .FirstOrDefaultAsync(s =>
                     s.Id == id &&
-                    (s.CreatorId == userId || s.IsPublic || s.SharedUsers.Any(su => su.UserId == userId))
+                    (s.CreatorId == userId || s.SharedUsers.Any(su => su.UserId == userId))
                 );
 
             if (story == null)

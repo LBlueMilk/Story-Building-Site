@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
+using BackendAPI.Services.GoogleSheets;
 
 namespace BackendAPI.Extensions
 {
@@ -41,6 +42,14 @@ namespace BackendAPI.Extensions
             services.AddAuthorization();
             // 加入 API 服務
             services.AddControllers();
+            // 加入 Google Sheets 服務
+            services.AddSingleton<GoogleSheetsService>();
+            // 加入 Canvas Sheet 服務
+            services.AddSingleton<CanvasSheetService>();
+            // 加入 Character Sheet 服務
+            services.AddSingleton<CharacterSheetService>();
+            // 加入 Timeline Sheet 服務
+            services.AddSingleton<TimelineSheetService>();
         }
     }
 }
