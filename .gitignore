@@ -9,3 +9,10 @@ BackendAPI/appsettings.Development.json
 # 忽略編譯產物（避免無用檔案影響 Git）
 bin/
 obj/
+
+
+BackendAPI/GoogleCredentials/
+# Google Sheets 金鑰（切勿上傳）
+BackendAPI/GoogleCredentials/story-building-site-589a8a77ef98.json
+
+

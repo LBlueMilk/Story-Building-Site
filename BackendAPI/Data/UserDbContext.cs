@@ -14,6 +14,8 @@ namespace BackendAPI.Data
         public DbSet<StorySharedUser> StorySharedUsers { get; set; }        
         public DbSet<RefreshToken> RefreshTokens { get; set; }
         public DbSet<ResetPasswordToken> ResetPasswordTokens { get; set; }
+        public DbSet<StoryData> StoryData { get; set; }
+
 
 
 
