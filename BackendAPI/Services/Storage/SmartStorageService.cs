@@ -38,7 +38,7 @@ namespace BackendAPI.Services.Storage
         public async Task<string?> GetCanvasJsonAsync(int storyId, int userId)
         {
             if (await IsGoogleUserAsync(userId))
-                return await _canvasSheetService.GetCanvasJsonAsync(storyId.ToString());
+                return await _canvasSheetService.GetCanvasJsonAsync(storyId.ToString(), userId.ToString());
             else
                 return await _storyDataService.GetCanvasJsonAsync(storyId);
         }
@@ -46,7 +46,7 @@ namespace BackendAPI.Services.Storage
         public async Task SaveCanvasJsonAsync(int storyId, int userId, string json)
         {
             if (await IsGoogleUserAsync(userId))
-                await _canvasSheetService.SaveCanvasJsonAsync(storyId.ToString(), json);
+                await _canvasSheetService.SaveCanvasJsonAsync(storyId.ToString(), userId.ToString(), json);
             else
                 await _storyDataService.SaveCanvasJsonAsync(storyId, json);
         }
@@ -55,7 +55,7 @@ namespace BackendAPI.Services.Storage
         public async Task<string?> GetCharacterJsonAsync(int storyId, int userId)
         {
             if (await IsGoogleUserAsync(userId))
-                return await _characterSheetService.GetCharacterJsonAsync(storyId.ToString());
+                return await _characterSheetService.GetCharacterJsonAsync(storyId.ToString(), userId.ToString());
             else
                 return await _storyDataService.GetCharacterJsonAsync(storyId);
         }
@@ -63,7 +63,7 @@ namespace BackendAPI.Services.Storage
         public async Task SaveCharacterJsonAsync(int storyId, int userId, string json)
         {
             if (await IsGoogleUserAsync(userId))
-                await _characterSheetService.SaveCharacterJsonAsync(storyId.ToString(), json);
+                await _characterSheetService.SaveCharacterJsonAsync(storyId.ToString(), userId.ToString(), json);
             else
                 await _storyDataService.SaveCharacterJsonAsync(storyId, json);
         }
@@ -72,7 +72,7 @@ namespace BackendAPI.Services.Storage
         public async Task<string?> GetTimelineJsonAsync(int storyId, int userId)
         {
             if (await IsGoogleUserAsync(userId))
-                return await _timelineSheetService.GetTimelineJsonAsync(storyId.ToString());
+                return await _timelineSheetService.GetTimelineJsonAsync(storyId.ToString(), userId.ToString());
             else
                 return await _storyDataService.GetTimelineJsonAsync(storyId);
         }
@@ -80,7 +80,7 @@ namespace BackendAPI.Services.Storage
         public async Task SaveTimelineJsonAsync(int storyId, int userId, string json)
         {
             if (await IsGoogleUserAsync(userId))
-                await _timelineSheetService.SaveTimelineJsonAsync(storyId.ToString(), json);
+                await _timelineSheetService.SaveTimelineJsonAsync(storyId.ToString(), userId.ToString(), json);
             else
                 await _storyDataService.SaveTimelineJsonAsync(storyId, json);
         }

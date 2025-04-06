@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
 using BackendAPI.Services.GoogleSheets;
+using BackendAPI.Services.User;
 
 namespace BackendAPI.Extensions
 {
@@ -32,7 +33,8 @@ namespace BackendAPI.Extensions
                         ValidateAudience = false, // 目前是 `false`，表示不檢查 Token 是給誰的，雲端後修改         
                         //ValidAudience = "BackendAPIClients", // 設定接收者名稱
                         ValidateLifetime = true, // 檢查 Token 是否過期
-                        ClockSkew = TimeSpan.Zero // 取消預設 5 分鐘誤差
+                        ClockSkew = TimeSpan.Zero, // 取消預設 5 分鐘誤差
+                        NameClaimType = "nameid" // 指定 JWT 中使用哪個欄位作為使用者識別
                     };
                 });
 
@@ -50,6 +52,9 @@ namespace BackendAPI.Extensions
             services.AddSingleton<CharacterSheetService>();
             // 加入 Timeline Sheet 服務
             services.AddSingleton<TimelineSheetService>();
+            // 加入 Story Data 服務
+            services.AddScoped<UserMigrationService>();
+
         }
     }
 }

@@ -12,28 +12,28 @@ namespace BackendAPI.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.CreateTable(
-                name: "users",
-                columns: table => new
-                {
-                    id = table.Column<int>(type: "integer", nullable: false)
-                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
-                    email = table.Column<string>(type: "character varying(255)", maxLength: 255, nullable: true),
-                    password = table.Column<string>(type: "text", nullable: true),
-                    name = table.Column<string>(type: "text", nullable: false),
-                    is_verified = table.Column<bool>(type: "boolean", nullable: false),
-                    created_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: false, defaultValueSql: "CURRENT_TIMESTAMP"),
-                    deleted_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
-                    restored_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
-                    last_login = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
-                    failed_login_attempts = table.Column<int>(type: "integer", nullable: false),
-                    last_failed_login = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
-                    last_password_change = table.Column<DateTime>(type: "timestamp with time zone", nullable: true)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_users", x => x.id);
-                });
+            //migrationBuilder.CreateTable(
+            //    name: "users",
+            //    columns: table => new
+            //    {
+            //        id = table.Column<int>(type: "integer", nullable: false)
+            //            .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
+            //        email = table.Column<string>(type: "character varying(255)", maxLength: 255, nullable: true),
+            //        password = table.Column<string>(type: "text", nullable: true),
+            //        name = table.Column<string>(type: "text", nullable: false),
+            //        is_verified = table.Column<bool>(type: "boolean", nullable: false),
+            //        created_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: false, defaultValueSql: "CURRENT_TIMESTAMP"),
+            //        deleted_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+            //        restored_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+            //        last_login = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+            //        failed_login_attempts = table.Column<int>(type: "integer", nullable: false),
+            //        last_failed_login = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+            //        last_password_change = table.Column<DateTime>(type: "timestamp with time zone", nullable: true)
+            //    },
+            //    constraints: table =>
+            //    {
+            //        table.PrimaryKey("PK_users", x => x.id);
+            //    });
 
             migrationBuilder.CreateTable(
                 name: "refresh_tokens",

@@ -21,29 +21,35 @@ namespace BackendAPI.Services.GoogleSheets
         }
 
         // 讀取指定 storyId 的角色 JSON 資料
-        public async Task<string?> GetCharacterJsonAsync(string storyId)
+        public async Task<string?> GetCharacterJsonAsync(string storyId, string userId)
         {
-            // 從第 2 列開始讀取 A 欄（storyId）與 B 欄（json）
-            var range = $"{_sheetName}!A2:B";
+            // 從第 2 列開始讀取 A 欄（storyId）與 B 欄（userId）與 C 欄（json）
+            var range = $"{_sheetName}!A2:C";
             var request = _sheetsService.Spreadsheets.Values.Get(_spreadsheetId, range);
             var response = await request.ExecuteAsync();
-            var values = response.Values;
-
+            var rows = response.Values;
             // 若資料為空則直接回傳 null
-            if (values == null || values.Count == 0)
+            if (rows == null || rows.Count == 0)
                 return null;
 
-            // 使用 LINQ 尋找第一筆符合的資料列
-            var row = values.FirstOrDefault(r => r.Count > 0 && r[0]?.ToString() == storyId);
-            // 若存在且包含 JSON 欄位，則回傳 JSON 字串
-            return row?.Count >= 2 ? row[1]?.ToString() : null;
+            foreach (var row in rows)
+            {
+                if (row.Count >= 3 &&
+                    row[0]?.ToString() == storyId &&
+                    row[1]?.ToString() == userId)
+                {
+                    return row[2]?.ToString();
+                }
+            }
+
+            return null;
         }
 
         // 更新或新增角色資料
-        public async Task<bool> SaveCharacterJsonAsync(string storyId, string json)
+        public async Task<bool> SaveCharacterJsonAsync(string storyId, string userId, string json)
         {
-            // 定義讀取範圍（從第 2 列開始，跳過標題列）
-            var range = $"{_sheetName}!A2:B";
+            // 從第 2 列開始讀取 A 欄（storyId）與 B 欄（userId）與 C 欄（json）
+            var range = $"{_sheetName}!A2:C";
             var request = _sheetsService.Spreadsheets.Values.Get(_spreadsheetId, range);
             var response = await request.ExecuteAsync();
             var values = response.Values ?? new List<IList<object>>();
@@ -52,33 +58,37 @@ namespace BackendAPI.Services.GoogleSheets
             int rowIndex = -1;
             for (int i = 0; i < values.Count; i++)
             {
-                if (values[i].Count >= 1 && values[i][0].ToString() == storyId)
+                if (values[i].Count >= 2 &&
+                    values[i][0]?.ToString() == storyId &&
+                    values[i][1]?.ToString() == userId)
                 {
                     rowIndex = i;
                     break;
                 }
             }
 
-            // 要寫入的資料格式：storyId + 對應的 json
-            ValueRange valueRange = new()
+            // 要寫入的資料格式：storyId + userId + json
+            if (rowIndex >= 0)
             {
-                Values = new List<IList<object>> { new List<object> { storyId, json } }
-            };
-
-            if (rowIndex == -1)
-            {
-                // 新增新的資料列
-                var appendRequest = _sheetsService.Spreadsheets.Values.Append(valueRange, _spreadsheetId, range);
-                appendRequest.ValueInputOption = SpreadsheetsResource.ValuesResource.AppendRequest.ValueInputOptionEnum.RAW;
-                await appendRequest.ExecuteAsync();
-            }
-            else
-            {
-                // 更新指定資料列
-                string updateRange = $"{_sheetName}!A{rowIndex + 2}:B{rowIndex + 2}";
+                // 更新已存在的資料
+                var updateRange = $"{_sheetName}!C{rowIndex + 2}";
+                var valueRange = new ValueRange
+                {
+                    Values = new List<IList<object>> { new List<object> { json } }
+                };
                 var updateRequest = _sheetsService.Spreadsheets.Values.Update(valueRange, _spreadsheetId, updateRange);
                 updateRequest.ValueInputOption = SpreadsheetsResource.ValuesResource.UpdateRequest.ValueInputOptionEnum.RAW;
                 await updateRequest.ExecuteAsync();
+            }
+            else
+            {
+                // 新增新的資料
+                var appendRequest = _sheetsService.Spreadsheets.Values.Append(new ValueRange
+                {
+                    Values = new List<IList<object>> { new List<object> { storyId, userId, json } }
+                }, _spreadsheetId, $"{_sheetName}!A:C");
+                appendRequest.ValueInputOption = SpreadsheetsResource.ValuesResource.AppendRequest.ValueInputOptionEnum.RAW;
+                await appendRequest.ExecuteAsync();
             }
 
             return true;

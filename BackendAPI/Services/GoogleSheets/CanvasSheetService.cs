@@ -1,5 +1,6 @@
 ﻿using Google.Apis.Sheets.v4.Data;
 using Google.Apis.Sheets.v4;
+using BackendAPI.Models;
 
 
 namespace BackendAPI.Services.GoogleSheets
@@ -19,25 +20,28 @@ namespace BackendAPI.Services.GoogleSheets
             // 從 appsettings.json 讀取
             _spreadsheetId = configuration["GoogleSheets:SpreadsheetId"];
             // Canvas 對應的工作表名稱
-            _sheetName = configuration["GoogleSheets:CanvasSheetName"]; 
+            _sheetName = configuration["GoogleSheets:CanvasSheetName"];
         }
 
         // 讀取指定 storyId 的 Canvas JSON 資料
-        public async Task<string?> GetCanvasJsonAsync(string storyId)
+        public async Task<string?> GetCanvasJsonAsync(string storyId, string userId)
         {
-            // 只取第 2 列開始的 A（storyId）和 B（json）欄
-            var range = $"{_sheetName}!A2:B";
+            // 從第 2 列開始讀取 A 欄（storyId）與 B 欄（userId）與 C 欄（json）
+            var range = $"{_sheetName}!A2:C";
             var request = _sheetsService.Spreadsheets.Values.Get(_spreadsheetId, range);
             var response = await request.ExecuteAsync();
-
             var rows = response.Values;
-            if (rows == null || rows.Count == 0) return null;
-            // 遍歷所有列，比對 storyId，找到即回傳 json 欄位
+            // 若資料為空則直接回傳 null
+            if (rows == null || rows.Count == 0) 
+                return null;
+
             foreach (var row in rows)
             {
-                if (row.Count >= 2 && row[0]?.ToString() == storyId)
+                if (row.Count >= 3 &&
+                    row[0]?.ToString() == storyId &&
+                    row[1]?.ToString() == userId)
                 {
-                    return row[1]?.ToString();
+                    return row[2]?.ToString();
                 }
             }
 
@@ -45,18 +49,21 @@ namespace BackendAPI.Services.GoogleSheets
         }
 
         // 更新或新增畫布資料
-        public async Task<bool> SaveCanvasJsonAsync(string storyId, string json)
+        public async Task<bool> SaveCanvasJsonAsync(string storyId, string userId, string json)
         {
-            var range = $"{_sheetName}!A2:B";
+            // 從第 2 列開始讀取 A 欄（storyId）與 B 欄（userId）與 C 欄（json）
+
+            var range = $"{_sheetName}!A2:C";
             var request = _sheetsService.Spreadsheets.Values.Get(_spreadsheetId, range);
             var response = await request.ExecuteAsync();
-
             var values = response.Values ?? new List<IList<object>>();
-            // 尋找對應 storyId 是否已存在
+
             int rowIndex = -1;
             for (int i = 0; i < values.Count; i++)
             {
-                if (values[i].Count >= 1 && values[i][0].ToString() == storyId)
+                if (values[i].Count >= 2 &&
+                    values[i][0]?.ToString() == storyId &&
+                    values[i][1]?.ToString() == userId)
                 {
                     rowIndex = i;
                     break;
@@ -65,8 +72,8 @@ namespace BackendAPI.Services.GoogleSheets
 
             if (rowIndex >= 0)
             {
-                // 更新
-                var updateRange = $"{_sheetName}!B{rowIndex + 2}";
+                // 更新現有的資料
+                var updateRange = $"{_sheetName}!C{rowIndex + 2}";
                 var valueRange = new ValueRange
                 {
                     Values = new List<IList<object>> { new List<object> { json } }
@@ -77,11 +84,11 @@ namespace BackendAPI.Services.GoogleSheets
             }
             else
             {
-                // 新增
+                // 新增新的資料
                 var appendRequest = _sheetsService.Spreadsheets.Values.Append(new ValueRange
                 {
-                    Values = new List<IList<object>> { new List<object> { storyId, json } }
-                }, _spreadsheetId, $"{_sheetName}!A:B");
+                    Values = new List<IList<object>> { new List<object> { storyId, userId, json } }
+                }, _spreadsheetId, $"{_sheetName}!A:C");
                 appendRequest.ValueInputOption = SpreadsheetsResource.ValuesResource.AppendRequest.ValueInputOptionEnum.RAW;
                 await appendRequest.ExecuteAsync();
             }
