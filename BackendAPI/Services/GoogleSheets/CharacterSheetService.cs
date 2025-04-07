@@ -1,5 +1,6 @@
 ﻿using Google.Apis.Sheets.v4.Data;
 using Google.Apis.Sheets.v4;
+using BackendAPI.Application.DTOs;
 
 namespace BackendAPI.Services.GoogleSheets
 {
@@ -39,6 +40,37 @@ namespace BackendAPI.Services.GoogleSheets
                     row[1]?.ToString() == userId)
                 {
                     return row[2]?.ToString();
+                }
+            }
+
+            return null;
+        }
+
+        // 讀取指定 storyId 的角色 JSON 資料，並附上最後修改時間
+        public async Task<JsonWithModifiedDto?> GetCharacterWithLastModifiedAsync(string storyId, string userId)
+        {
+            var range = $"{_sheetName}!A2:D";
+            var request = _sheetsService.Spreadsheets.Values.Get(_spreadsheetId, range);
+            var response = await request.ExecuteAsync();
+            var rows = response.Values;
+
+            if (rows == null || rows.Count == 0)
+                return null;
+
+            foreach (var row in rows)
+            {
+                if (row.Count >= 4 &&
+                    row[0]?.ToString() == storyId &&
+                    row[1]?.ToString() == userId)
+                {
+                    var json = row[2]?.ToString() ?? "";
+                    var lastModifiedStr = row[3]?.ToString();
+
+                    return new JsonWithModifiedDto
+                    {
+                        Json = json,
+                        LastModifiedRaw = lastModifiedStr
+                    };
                 }
             }
 

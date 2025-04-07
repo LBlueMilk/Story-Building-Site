@@ -1,4 +1,5 @@
-﻿using BackendAPI.Services.GoogleSheets;
+﻿using BackendAPI.Application.DTOs;
+using BackendAPI.Services.GoogleSheets;
 using BackendAPI.Services.User;
 
 namespace BackendAPI.Services.Storage
@@ -51,6 +52,24 @@ namespace BackendAPI.Services.Storage
                 await _storyDataService.SaveCanvasJsonAsync(storyId, json); // PostgreSQL 無 lastModified 欄
         }
 
+        public async Task<JsonWithModifiedDto?> GetCanvasWithLastModifiedAsync(int storyId, int userId)
+        {
+            if (await IsGoogleUserAsync(userId))
+            {
+                return await _canvasSheetService.GetCanvasWithLastModifiedAsync(
+                    storyId.ToString(), userId.ToString());
+            }
+            else
+            {
+                var json = await _storyDataService.GetCanvasJsonAsync(storyId);
+                return json == null ? null : new JsonWithModifiedDto
+                {
+                    Json = json,
+                    LastModifiedRaw = DateTime.MinValue.ToString("o")  // PostgreSQL 無 lastModified 資訊
+                };
+            }
+        }
+
         // ---------- Character ----------
         public async Task<string?> GetCharacterJsonAsync(int storyId, int userId)
         {
@@ -66,6 +85,24 @@ namespace BackendAPI.Services.Storage
                 await _characterSheetService.SaveCharacterJsonAsync(storyId.ToString(), userId.ToString(), json, lastModified);
             else
                 await _storyDataService.SaveCharacterJsonAsync(storyId, json);
+        }
+
+        public async Task<JsonWithModifiedDto?> GetCharacterWithLastModifiedAsync(int storyId, int userId)
+        {
+            if (await IsGoogleUserAsync(userId))
+            {
+                return await _characterSheetService.GetCharacterWithLastModifiedAsync(
+                    storyId.ToString(), userId.ToString());
+            }
+            else
+            {
+                var json = await _storyDataService.GetCharacterJsonAsync(storyId);
+                return json == null ? null : new JsonWithModifiedDto
+                {
+                    Json = json,
+                    LastModifiedRaw = DateTime.MinValue.ToString("o")
+                };
+            }
         }
 
         // ---------- Timeline ----------
@@ -85,5 +122,22 @@ namespace BackendAPI.Services.Storage
                 await _storyDataService.SaveTimelineJsonAsync(storyId, json);
         }
 
+        public async Task<JsonWithModifiedDto?> GetTimelineWithLastModifiedAsync(int storyId, int userId)
+        {
+            if (await IsGoogleUserAsync(userId))
+            {
+                return await _timelineSheetService.GetTimelineWithLastModifiedAsync(
+                    storyId.ToString(), userId.ToString());
+            }
+            else
+            {
+                var json = await _storyDataService.GetTimelineJsonAsync(storyId);
+                return json == null ? null : new JsonWithModifiedDto
+                {
+                    Json = json,
+                    LastModifiedRaw = DateTime.MinValue.ToString("o")
+                };
+            }
+        }
     }
 }

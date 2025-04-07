@@ -48,11 +48,18 @@ namespace BackendAPI.Controllers
                 return Forbid();
 
             // 從儲存服務讀取畫布 JSON 資料
-            var jsonString = await _storageService.GetCanvasJsonAsync(storyId, userId);
-            // 將 JSON 字串轉為物件
-            var json = JsonDocument.Parse(jsonString).RootElement;
+            var result = await _storageService.GetCanvasWithLastModifiedAsync(storyId, userId);
+            if (result == null)
+                return NotFound(new { error = "Canvas not found." });
 
-            return Ok(new { json });
+            // 將 JSON 字串轉為物件
+            var json = JsonDocument.Parse(result.Json).RootElement;
+
+            return Ok(new
+            {
+                json,
+                lastModified = DateTime.Parse(result.LastModifiedRaw).ToString("o")
+            });
         }
 
         // 儲存或更新指定故事的畫布資料
