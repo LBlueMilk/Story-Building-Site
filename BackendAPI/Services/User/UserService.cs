@@ -83,6 +83,13 @@ namespace BackendAPI.Services.User
                 .Where(s => s.CreatorId == userId && s.DeletedAt == null)
                 .ToListAsync();
         }
+
+        // 判斷故事是否存在
+        public async Task<bool> StoryExistsAsync(int storyId)
+        {
+            return await _context.Stories.AnyAsync(s => s.Id == storyId && s.DeletedAt == null);
+        }
+
     }
 
 }

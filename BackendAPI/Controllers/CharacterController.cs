@@ -38,12 +38,19 @@ namespace BackendAPI.Controllers
                 return Unauthorized(new { error = "Missing or invalid token." });
             }
 
+            // 檢查故事是否存在
+            if (!await _userService.StoryExistsAsync(storyId))
+                return NotFound(new { error = "Story not found." });
+
             // 檢查使用者是否有存取該故事的權限
             if (!await _userService.HasAccessToStoryAsync(userId, storyId))
                 return Forbid();
 
             // 從儲存服務讀取角色 JSON 資料
-            var json = await _storageService.GetCharacterJsonAsync(storyId, userId);
+            var jsonString = await _storageService.GetCharacterJsonAsync(storyId, userId);
+            // 將 JSON 字串轉為物件
+            var json = JsonDocument.Parse(jsonString).RootElement;
+
             return Ok(new { json });
         }
 
@@ -61,14 +68,25 @@ namespace BackendAPI.Controllers
             {
                 return Unauthorized();
             }
+
+            // 檢查故事是否存在
+            if (!await _userService.StoryExistsAsync(storyId))
+                return NotFound(new { error = "Story not found." });
+
             // 檢查是否有操作權限
             if (!await _userService.HasAccessToStoryAsync(userId, storyId))
                 return Forbid();
 
-            // 將傳入的 JSON 物件序列化為字串
-            string jsonString = JsonSerializer.Serialize(dto.Json);
-            // 儲存角色資料
-            await _storageService.SaveCharacterJsonAsync(storyId, userId, jsonString);
+            string jsonString;
+
+            // 若傳入為已序列化的 JSON 字串，直接取出
+            if (dto.Json.ValueKind == JsonValueKind.String)
+                jsonString = dto.Json.GetString()!;
+            else
+                jsonString = dto.Json.GetRawText();
+
+            // 儲存角色資料（會寫入 Google Sheets 或 PostgreSQL，視使用者身份而定）
+            await _storageService.SaveCharacterJsonAsync(storyId, userId, jsonString, DateTime.UtcNow);
             return Ok(new { message = "Characters saved." });
         }
     }

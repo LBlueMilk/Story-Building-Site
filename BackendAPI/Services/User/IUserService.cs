@@ -15,5 +15,9 @@ namespace BackendAPI.Services.User
 
         // 取得目前登入者的使用者名稱
         Task<List<Story>> GetUserStoriesAsync(int userId);
+
+        // 取得故事ID
+        Task<bool> StoryExistsAsync(int storyId);
+
     }
 }

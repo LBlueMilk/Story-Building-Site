@@ -43,12 +43,12 @@ namespace BackendAPI.Services.Storage
                 return await _storyDataService.GetCanvasJsonAsync(storyId);
         }
 
-        public async Task SaveCanvasJsonAsync(int storyId, int userId, string json)
+        public async Task SaveCanvasJsonAsync(int storyId, int userId, string json, DateTime lastModified)
         {
             if (await IsGoogleUserAsync(userId))
-                await _canvasSheetService.SaveCanvasJsonAsync(storyId.ToString(), userId.ToString(), json);
+                await _canvasSheetService.SaveCanvasJsonAsync(storyId.ToString(), userId.ToString(), json, lastModified);
             else
-                await _storyDataService.SaveCanvasJsonAsync(storyId, json);
+                await _storyDataService.SaveCanvasJsonAsync(storyId, json); // PostgreSQL 無 lastModified 欄
         }
 
         // ---------- Character ----------
@@ -60,10 +60,10 @@ namespace BackendAPI.Services.Storage
                 return await _storyDataService.GetCharacterJsonAsync(storyId);
         }
 
-        public async Task SaveCharacterJsonAsync(int storyId, int userId, string json)
+        public async Task SaveCharacterJsonAsync(int storyId, int userId, string json, DateTime lastModified)
         {
             if (await IsGoogleUserAsync(userId))
-                await _characterSheetService.SaveCharacterJsonAsync(storyId.ToString(), userId.ToString(), json);
+                await _characterSheetService.SaveCharacterJsonAsync(storyId.ToString(), userId.ToString(), json, lastModified);
             else
                 await _storyDataService.SaveCharacterJsonAsync(storyId, json);
         }
@@ -77,12 +77,13 @@ namespace BackendAPI.Services.Storage
                 return await _storyDataService.GetTimelineJsonAsync(storyId);
         }
 
-        public async Task SaveTimelineJsonAsync(int storyId, int userId, string json)
+        public async Task SaveTimelineJsonAsync(int storyId, int userId, string json, DateTime lastModified)
         {
             if (await IsGoogleUserAsync(userId))
-                await _timelineSheetService.SaveTimelineJsonAsync(storyId.ToString(), userId.ToString(), json);
+                await _timelineSheetService.SaveTimelineJsonAsync(storyId.ToString(), userId.ToString(), json, lastModified);
             else
                 await _storyDataService.SaveTimelineJsonAsync(storyId, json);
         }
+
     }
 }

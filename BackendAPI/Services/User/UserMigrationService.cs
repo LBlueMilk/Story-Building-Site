@@ -31,11 +31,11 @@ namespace BackendAPI.Services.User
                 var timeline = await _storyDataService.GetTimelineJsonAsync(storyId);
 
                 if (canvas != null)
-                    await _storageService.SaveCanvasJsonAsync(storyId, userId, canvas);
+                    await _storageService.SaveCanvasJsonAsync(storyId, userId, canvas, DateTime.UtcNow);
                 if (character != null)
-                    await _storageService.SaveCharacterJsonAsync(storyId, userId, character);
+                    await _storageService.SaveCharacterJsonAsync(storyId, userId, character, DateTime.UtcNow);
                 if (timeline != null)
-                    await _storageService.SaveTimelineJsonAsync(storyId, userId, timeline);
+                    await _storageService.SaveTimelineJsonAsync(storyId, userId, timeline, DateTime.UtcNow);
             }
 
             return true;
