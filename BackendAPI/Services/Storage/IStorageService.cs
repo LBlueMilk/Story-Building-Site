@@ -8,6 +8,9 @@ namespace BackendAPI.Services.Storage
         Task<string?> GetCanvasJsonAsync(int storyId, int userId);
         Task SaveCanvasJsonAsync(int storyId, int userId, string json, DateTime lastModified);
         Task<JsonWithModifiedDto?> GetCanvasWithLastModifiedAsync(int storyId, int userId);
+        // Canvas 分段儲存與讀取（支援大容量）
+        Task SaveCanvasChunksAsync(string storyId, string userId, string json, DateTime lastModified);
+        Task<JsonWithModifiedDto?> ReadCanvasChunksAsync(string storyId, string userId);
 
         // 定義獲取和保存用戶角色的方法
         Task<string?> GetCharacterJsonAsync(int storyId, int userId);

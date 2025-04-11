@@ -70,6 +70,37 @@ namespace BackendAPI.Services.Storage
             }
         }
 
+        // Canvas 分段儲存（供大檔案使用）
+        public async Task SaveCanvasChunksAsync(string storyId, string userId, string json, DateTime lastModified)
+        {
+            // 僅 Google 使用者才用 Sheets 儲存
+            var userIdInt = int.Parse(userId);
+            if (await IsGoogleUserAsync(userIdInt))
+            {
+                await _canvasSheetService.SaveCanvasChunksAsync(storyId, userId, json, lastModified);
+            }
+            else
+            {
+                // 非 Google 使用者暫不支援分段儲存（僅限 Sheets 使用）
+                throw new NotSupportedException("非 Google 使用者不支援分段儲存。");
+            }
+        }
+
+        // Canvas 分段讀取（合併所有 chunk 成為一筆資料）
+        public async Task<JsonWithModifiedDto?> ReadCanvasChunksAsync(string storyId, string userId)
+        {
+            var userIdInt = int.Parse(userId);
+            if (await IsGoogleUserAsync(userIdInt))
+            {
+                return await _canvasSheetService.ReadCanvasChunksAsync(storyId, userId);
+            }
+            else
+            {
+                throw new NotSupportedException("非 Google 使用者不支援分段讀取。");
+            }
+        }
+
+
         // ---------- Character ----------
         public async Task<string?> GetCharacterJsonAsync(int storyId, int userId)
         {

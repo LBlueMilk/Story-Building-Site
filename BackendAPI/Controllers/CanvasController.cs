@@ -29,28 +29,18 @@ namespace BackendAPI.Controllers
         public async Task<IActionResult> GetCanvas(int storyId)
         {
             int userId;
-
-            try
-            {
-                userId = _userService.GetUserId();
-            }
-            catch
-            {
-                return Unauthorized(new { error = "Missing or invalid token." });
-            }
+            try { userId = _userService.GetUserId(); }
+            catch { return Unauthorized(); }
 
             // 檢查故事是否存在
-            if (!await _userService.StoryExistsAsync(storyId))
-                return NotFound(new { error = "Story not found." });
+            if (!await _userService.StoryExistsAsync(storyId)) return NotFound();
 
             // 檢查使用者是否有權限存取該故事
-            if (!await _userService.HasAccessToStoryAsync(userId, storyId))
-                return Forbid();
+            if (!await _userService.HasAccessToStoryAsync(userId, storyId)) return Forbid();
 
             // 從儲存服務讀取畫布 JSON 資料
-            var result = await _storageService.GetCanvasWithLastModifiedAsync(storyId, userId);
-            if (result == null)
-                return NotFound(new { error = "Canvas not found." });
+            var result = await _storageService.ReadCanvasChunksAsync(storyId.ToString(), userId.ToString());
+            if (result == null) return NotFound(new { error = "Canvas not found." });
 
             // 將 JSON 字串轉為物件
             var json = JsonDocument.Parse(result.Json).RootElement;
@@ -67,15 +57,8 @@ namespace BackendAPI.Controllers
         public async Task<IActionResult> SaveCanvas(int storyId, [FromBody] JsonDataDto dto)
         {
             int userId;
-
-            try
-            {
-                userId = _userService.GetUserId();
-            }
-            catch
-            {
-                return Unauthorized();
-            }
+            try { userId = _userService.GetUserId(); }
+            catch { return Unauthorized(); }
 
             // 檢查故事是否存在
             if (!await _userService.StoryExistsAsync(storyId))
@@ -85,17 +68,13 @@ namespace BackendAPI.Controllers
             if (!await _userService.HasAccessToStoryAsync(userId, storyId))
                 return Forbid();
 
-            string jsonString;
-
-            // 若傳入為已序列化的 JSON 字串，直接取出
-            if (dto.Json.ValueKind == JsonValueKind.String)
-                jsonString = dto.Json.GetString()!;
-            else
-                jsonString = dto.Json.GetRawText();
+            string jsonString = dto.Json.ValueKind == JsonValueKind.String
+                ? dto.Json.GetString()!
+                : dto.Json.GetRawText();
 
 
             // 儲存畫布資料（會寫入 Google Sheets 或 PostgreSQL，視使用者身份而定）
-            await _storageService.SaveCanvasJsonAsync(storyId, userId, jsonString, DateTime.UtcNow);
+            await _storageService.SaveCanvasChunksAsync(storyId.ToString(), userId.ToString(), jsonString, DateTime.UtcNow);
             return Ok(new { message = "Canvas saved." });
         }
     }
