@@ -84,17 +84,58 @@ namespace BackendAPI.Controllers
             if (!await _userService.HasAccessToStoryAsync(userId, storyId))
                 return Forbid();
 
-            string jsonString;
 
-            // 若傳入為已序列化的 JSON 字串，直接取出
-            if (dto.Json.ValueKind == JsonValueKind.String)
-                jsonString = dto.Json.GetString()!;
-            else
-                jsonString = dto.Json.GetRawText();
+            try
+            {
+                JsonElement root;
 
-            // 儲存角色資料（會寫入 Google Sheets 或 PostgreSQL，視使用者身份而定）
-            await _storageService.SaveCharacterJsonAsync(storyId, userId, jsonString, DateTime.UtcNow);
-            return Ok(new { message = "Characters saved." });
+                if (dto.Json.ValueKind == JsonValueKind.String)
+                {
+                    root = JsonDocument.Parse(dto.Json.GetString()!).RootElement;
+                }
+                else
+                {
+                    root = dto.Json;
+                }
+
+                if (!root.TryGetProperty("characters", out var characters))
+                    return BadRequest(new { error = "Missing 'characters' property." });
+
+
+                var fixedCharacters = new List<JsonElement>();
+
+                foreach (var character in characters.EnumerateArray())
+                {
+                    using var doc = JsonDocument.Parse(character.GetRawText());
+                    var obj = doc.RootElement.EnumerateObject().ToDictionary(p => p.Name, p => p.Value);
+
+                    if (!obj.ContainsKey("attributes"))
+                        obj["attributes"] = JsonDocument.Parse("{}").RootElement;
+
+                    if (!obj.ContainsKey("relations"))
+                        obj["relations"] = JsonDocument.Parse("[]").RootElement;
+
+                    var fixedJson = JsonSerializer.SerializeToElement(obj);
+                    fixedCharacters.Add(fixedJson);
+                }
+
+                // 包成 characters 陣列物件
+                var payload = new Dictionary<string, object>
+                {
+                    ["characters"] = fixedCharacters
+                };
+
+                var jsonString = JsonSerializer.Serialize(payload);
+
+
+
+                await _storageService.SaveCharacterJsonAsync(storyId, userId, jsonString, DateTime.UtcNow);
+                return Ok(new { message = "Characters saved." });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = "Failed to save character data.", detail = ex.Message });
+            }
         }
     }
 
