@@ -2,6 +2,7 @@
 using BackendAPI.Services.GoogleSheets;
 using BackendAPI.Services.Storage;
 using BackendAPI.Services.User;
+using BackendAPI.Utils;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System.Text.Json;
@@ -91,9 +92,31 @@ namespace BackendAPI.Controllers
             else
                 jsonString = dto.Json.GetRawText();
 
+            // 確保 JSON 字串符合事件 ID 的格式
+            jsonString = JsonSanitizer.EnsureEventIds(jsonString);
+
             // 儲存時間軸資料（會寫入 Google Sheets 或 PostgreSQL，視使用者身份而定）
             await _storageService.SaveTimelineJsonAsync(storyId, userId, jsonString, DateTime.UtcNow);
-            return Ok(new { message = "Timeline saved." });
+            try
+            {
+                var parsedJson = JsonDocument.Parse(jsonString).RootElement;
+
+                return Ok(new
+                {
+                    success = true,
+                    message = "Timeline saved.",
+                    json = parsedJson
+                });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new
+                {
+                    error = "無法解析 JSON，請檢查內容格式是否正確",
+                    detail = ex.Message,
+                    jsonRaw = jsonString // ✅ 可選：方便 Debug
+                });
+            }
         }
     }
 }
