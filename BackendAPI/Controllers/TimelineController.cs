@@ -48,16 +48,18 @@ namespace BackendAPI.Controllers
 
             // 從儲存服務讀取時間軸 JSON 資料
             var result = await _storageService.GetTimelineWithLastModifiedAsync(storyId, userId);
-            if (result == null)
-                return NotFound(new { error = "Timeline not found." });
+
+            // 若查無資料，視為尚未建立，回傳空事件與年號欄位
+            string jsonString = result?.Json ?? "{\"events\":[],\"eras\":[]}";
+            string lastModified = result?.LastModifiedRaw ?? DateTime.UtcNow.ToString("o");
 
             // 將 JSON 字串轉為物件
-            var json = JsonDocument.Parse(result.Json).RootElement;
+            var json = JsonDocument.Parse(jsonString).RootElement;
 
             return Ok(new
             {
                 json,
-                lastModified = DateTime.Parse(result.LastModifiedRaw).ToString("o")
+                lastModified
             });
         }
 

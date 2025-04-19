@@ -48,16 +48,18 @@ namespace BackendAPI.Controllers
 
             // 從儲存服務讀取角色 JSON 資料
             var result = await _storageService.GetCharacterWithLastModifiedAsync(storyId, userId);
-            if (result == null)
-                return NotFound(new { error = "Character not found." });
+
+            // 若找不到，視為尚未建立角色 → 回傳空物件
+            string jsonString = result?.Json ?? "{\"characters\":[]}";
+            string lastModified = result?.LastModifiedRaw ?? DateTime.UtcNow.ToString("o");
 
             // 將 JSON 字串轉為物件
-            var json = JsonDocument.Parse(result.Json).RootElement;
+            var json = JsonDocument.Parse(jsonString).RootElement;
 
             return Ok(new
             {
                 json,
-                lastModified = DateTime.Parse(result.LastModifiedRaw).ToString("o")
+                lastModified
             });
         }
 
