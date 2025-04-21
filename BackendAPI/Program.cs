@@ -68,8 +68,11 @@ app.UseCors("AllowLocalhost3000");
 
 
 app.UseAuthentication(); // **一定要在 Authorization 之前執行**
-//app.UseHttpsRedirection();
+// app.UseHttpsRedirection();
 app.UseAuthorization();
+
+// 設定健康檢查路由Render用
+app.MapGet("/healthz", () => Results.Ok("Healthy"));
 
 app.MapControllers();
 app.Run();
