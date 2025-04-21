@@ -73,6 +73,12 @@ app.UseAuthorization();
 
 // 設定健康檢查路由Render用
 app.MapGet("/healthz", () => Results.Ok("Healthy"));
+// 自動執行資料庫創建和遷移
+using (var scope = app.Services.CreateScope())
+{
+    var db = scope.ServiceProvider.GetRequiredService<UserDbContext>();
+    db.Database.Migrate(); 
+}
 
 app.MapControllers();
 app.Run();
