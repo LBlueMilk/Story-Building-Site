@@ -1,0 +1,19 @@
+﻿# 忽略 Git
+.git
+.gitignore
+
+# 忽略 VS 編譯暫存
+bin/
+obj/
+
+# 忽略開發用檔案
+*.user
+*.suo
+*.db
+*.log
+
+# 忽略 README 或文件圖檔（若不影響服務）
+*.md
+*.jpg
+*.png
+*.jpeg
