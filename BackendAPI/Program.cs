@@ -40,19 +40,22 @@ builder.Services.AddScoped<IStorageService, SmartStorageService>();
 builder.Services.AddHttpContextAccessor();
 
 
-
 builder.Services.AddCors(options =>
 {
-    options.AddPolicy("AllowLocalhost3000",
-        builder => builder
-            .WithOrigins("http://localhost:3000")
-            .AllowAnyHeader()
-            .AllowAnyMethod()
-            .AllowCredentials()
-    );
+    options.AddPolicy("AllowFrontend", policy =>
+    {
+        policy.WithOrigins(
+            "http://localhost:3000", // 本機開發
+            "https://story-building-site-fe.vercel.app" // 雲端開發
+        )
+        .AllowAnyHeader()
+        .AllowAnyMethod()
+        .AllowCredentials(); // 若你使用 cookie 或 JWT 附在 Header 時需要
+    });
 });
 
 
+// 本機開發
 var app = builder.Build();
 
 // 設定 HTTP 請求處理流程
@@ -63,8 +66,10 @@ if (app.Environment.IsDevelopment())
     app.UseDeveloperExceptionPage();
 }
 
-
-app.UseCors("AllowLocalhost3000");
+// 本機開發
+//app.UseCors("AllowLocalhost3000");
+// 雲端開發
+app.UseCors("AllowFrontend");
 
 
 app.UseAuthentication(); // **一定要在 Authorization 之前執行**
@@ -77,7 +82,7 @@ app.MapGet("/healthz", () => Results.Ok("Healthy"));
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<UserDbContext>();
-    db.Database.Migrate(); 
+    db.Database.Migrate();
 }
 
 app.MapControllers();
