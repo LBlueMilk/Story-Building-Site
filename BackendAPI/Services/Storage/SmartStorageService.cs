@@ -81,8 +81,8 @@ namespace BackendAPI.Services.Storage
             }
             else
             {
-                // 非 Google 使用者暫不支援分段儲存（僅限 Sheets 使用）
-                throw new NotSupportedException("非 Google 使用者不支援分段儲存。");
+                // 非 Google 使用者（網站註冊帳號）→ 直接寫入 PostgreSQL
+                await _storyDataService.SaveCanvasJsonAsync(int.Parse(storyId), json);
             }
         }
 
@@ -92,13 +92,27 @@ namespace BackendAPI.Services.Storage
             var userIdInt = int.Parse(userId);
             if (await IsGoogleUserAsync(userIdInt))
             {
+                // Google 使用者 → 走 Sheets 分段邏輯
                 return await _canvasSheetService.ReadCanvasChunksAsync(storyId, userId);
             }
             else
             {
-                throw new NotSupportedException("非 Google 使用者不支援分段讀取。");
+                // 非 Google 使用者（網站註冊帳號）→ 從 PostgreSQL 讀取
+                var json = await _storyDataService.GetCanvasJsonAsync(int.Parse(storyId));
+
+                // 若為 null 或空白，給預設空白畫布資料
+                var fixedJson = string.IsNullOrWhiteSpace(json)
+                    ? "{\"strokes\":[],\"images\":[],\"markers\":[],\"canvasMeta\":{\"width\":1920,\"height\":1080,\"scrollX\":0,\"scrollY\":0}}"
+                    : json;
+
+                return new JsonWithModifiedDto
+                {
+                    Json = fixedJson,
+                    LastModifiedRaw = DateTime.UtcNow.ToString("o")
+                };
             }
         }
+
 
 
         // ---------- Character ----------

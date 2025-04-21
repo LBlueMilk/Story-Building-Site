@@ -1,10 +1,13 @@
-﻿using System.ComponentModel.DataAnnotations.Schema;
+﻿using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations.Schema;
 
 namespace BackendAPI.Models
 {
     [Table("story_data")]
     public class StoryData
-    {        
+    {
+        [Key]
+        [Column("id")]
         public int Id { get; set; }
 
         [Column("story_id")]

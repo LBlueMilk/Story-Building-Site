@@ -24,23 +24,31 @@ namespace BackendAPI.Services.Database
 
         public async Task SaveCanvasJsonAsync(int storyId, string json)
         {
-            var record = await _db.StoryData.FirstOrDefaultAsync(x => x.StoryId == storyId);
-            if (record != null)
+            try
             {
-                record.CanvasJson = json;
-                record.UpdatedAt = DateTime.UtcNow;
-            }
-            else
-            {
-                _db.StoryData.Add(new StoryData
+                var record = await _db.StoryData.FirstOrDefaultAsync(x => x.StoryId == storyId);
+                if (record != null)
                 {
-                    StoryId = storyId,
-                    CanvasJson = json,
-                    UpdatedAt = DateTime.UtcNow
-                });
-            }
+                    record.CanvasJson = json;
+                    record.UpdatedAt = DateTime.UtcNow;
+                }
+                else
+                {
+                    _db.StoryData.Add(new StoryData
+                    {
+                        StoryId = storyId,
+                        CanvasJson = json,
+                        UpdatedAt = DateTime.UtcNow
+                    });
+                }
 
-            await _db.SaveChangesAsync();
+                await _db.SaveChangesAsync();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[SaveCanvasJsonAsync] 儲存失敗: {ex.Message}");
+                throw; // 讓 controller 捕捉用來回傳詳細錯誤
+            }
         }
 
         public async Task<string?> GetCharacterJsonAsync(int storyId)
