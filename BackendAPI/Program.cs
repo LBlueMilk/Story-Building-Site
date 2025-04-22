@@ -12,6 +12,7 @@ using Microsoft.AspNetCore.Diagnostics.EntityFrameworkCore;
 using BackendAPI.Services.Storage;
 using BackendAPI.Services.Database;
 using BackendAPI.Services.User;
+using Microsoft.AspNetCore.Mvc;
 
 
 var builder = WebApplication.CreateBuilder(args);
@@ -19,6 +20,13 @@ var builder = WebApplication.CreateBuilder(args);
 // 產出 JWT Secret Key（執行一次後將 Secret 存入 appsettings.json，再註解掉這行）
 //var secretKey = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32));
 //Console.WriteLine($"Generated JWT Secret: {secretKey}");
+
+// 錯誤資料回傳格式
+builder.Services.Configure<ApiBehaviorOptions>(options =>
+{
+    options.SuppressMapClientErrors = false;
+});
+
 
 // Extensions資料夾下的ServiceExtensions.cs檔案
 builder.Services.ConfigureServices(builder.Configuration);
