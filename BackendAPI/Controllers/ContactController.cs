@@ -1,5 +1,6 @@
 ﻿using BackendAPI.Application.DTOs;
 using BackendAPI.Services;
+using BackendAPI.Utils;
 using Microsoft.AspNetCore.Mvc;
 
 namespace BackendAPI.Controllers
@@ -26,6 +27,11 @@ namespace BackendAPI.Controllers
             if (!ModelState.IsValid)
             {
                 return BadRequest(ModelState);
+            }
+
+            if (!EmailValidator.IsValidEmail(request.Email))
+            {
+                return BadRequest(new { error = "Email 格式錯誤，或不屬於允許的網域。" });
             }
 
             var subject = $"來自 {request.Name} 的聯絡訊息";
