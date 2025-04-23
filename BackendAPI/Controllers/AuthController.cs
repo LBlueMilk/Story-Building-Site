@@ -334,12 +334,11 @@ namespace BackendAPI.Controllers
             if (string.IsNullOrEmpty(request.RefreshToken))
                 return BadRequest(new { message = "請提供 Refresh Token" });
 
-            // 先清理過期的 Refresh Token
+            // 清理過期或已撤銷的 Refresh Tokens
             try
             {
                 const int batchSize = 1000;
                 int deletedRows;
-
                 do
                 {
                     deletedRows = await _context.RefreshTokens
@@ -350,15 +349,20 @@ namespace BackendAPI.Controllers
             }
             catch (Exception ex)
             {
-                _logger?.LogWarning($"[RefreshToken] 刪除過期 Refresh Token 時發生錯誤: {ex.Message}");
+                _logger?.LogWarning($"[RefreshToken] 清理過期 Token 時錯誤: {ex.Message}");
             }
 
-            // 先取得該使用者所有有效的 Refresh Token
-            var storedToken = await _context.RefreshTokens
+            // 查詢所有尚未撤銷、未過期的 Refresh Tokens
+            var validTokens = await _context.RefreshTokens
                 .Include(rt => rt.User)
-                .FirstOrDefaultAsync(rt => rt.ExpiresAt > DateTime.UtcNow && rt.RevokedAt == null);
+                .Where(rt => rt.ExpiresAt > DateTime.UtcNow && rt.RevokedAt == null)
+                .ToListAsync();
 
-            if (storedToken == null || !BCrypt.Net.BCrypt.Verify(request.RefreshToken, storedToken.TokenHash))
+            // 用 bcrypt 驗證前端提供的 Refresh Token 是否正確
+            var storedToken = validTokens.FirstOrDefault(rt =>
+                BCrypt.Net.BCrypt.Verify(request.RefreshToken, rt.TokenHash));
+
+            if (storedToken == null)
                 return Unauthorized(new { message = "Refresh Token 無效或已過期，請重新登入" });
 
             try
