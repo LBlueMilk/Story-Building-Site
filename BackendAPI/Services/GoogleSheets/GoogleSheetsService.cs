@@ -1,6 +1,7 @@
 ﻿using Google.Apis.Auth.OAuth2;
 using Google.Apis.Services;
 using Google.Apis.Sheets.v4;
+using System.Text;
 
 namespace BackendAPI.Services.GoogleSheets
 {
@@ -10,16 +11,34 @@ namespace BackendAPI.Services.GoogleSheets
 
         public GoogleSheetsService(IConfiguration configuration)
         {
-            var credentialsPath = configuration["GoogleSheets:CredentialsPath"];
+            GoogleCredential credential;
 
-            if (string.IsNullOrWhiteSpace(credentialsPath) || !File.Exists(credentialsPath))
+            // 雲端優先：從環境變數中讀取 JSON 字串
+            var envJson = Environment.GetEnvironmentVariable("GOOGLE_CREDENTIALS_JSON");
+
+            if (!string.IsNullOrWhiteSpace(envJson))
             {
-                throw new FileNotFoundException("無法找到 Google Sheets 憑證檔案", credentialsPath);
+                Console.WriteLine("[GoogleSheetsService] 使用環境變數中的 Google 憑證");
+                using var stream = new MemoryStream(Encoding.UTF8.GetBytes(envJson));
+                credential = GoogleCredential
+                    .FromStream(stream)
+                    .CreateScoped(SheetsService.Scope.Spreadsheets);
             }
+            else
+            {
+                // 本機開發端：讀取 appsettings.Development.json 中的路徑
+                var credentialsPath = configuration["GoogleSheets:CredentialsPath"];
 
-            var credential = GoogleCredential
-                .FromFile(credentialsPath)
-                .CreateScoped(SheetsService.Scope.Spreadsheets);
+                if (string.IsNullOrWhiteSpace(credentialsPath) || !File.Exists(credentialsPath))
+                {
+                    throw new FileNotFoundException("無法找到 Google Sheets 憑證檔案", credentialsPath);
+                }
+
+                Console.WriteLine($"[GoogleSheetsService] 使用本機憑證路徑: {credentialsPath}");
+                credential = GoogleCredential
+                    .FromFile(credentialsPath)
+                    .CreateScoped(SheetsService.Scope.Spreadsheets);
+            }
 
             _sheetsService = new SheetsService(new BaseClientService.Initializer
             {
