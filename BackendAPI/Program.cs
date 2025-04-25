@@ -81,6 +81,18 @@ app.UseRouting();
 // 雲端開發
 app.UseCors("AllowFrontend");
 
+// 明確允許處理 OPTIONS 請求（預檢請求）
+// 如果你有中間件阻擋 OPTIONS，CORS 不會成功
+app.Use(async (context, next) =>
+{
+    if (context.Request.Method == "OPTIONS")
+    {
+        context.Response.StatusCode = 200;
+        await context.Response.CompleteAsync();
+        return;
+    }
+    await next();
+});
 
 app.UseAuthentication(); // **一定要在 Authorization 之前執行**
 // app.UseHttpsRedirection();
