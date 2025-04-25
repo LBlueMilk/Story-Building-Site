@@ -66,7 +66,7 @@ builder.Services.AddCors(options =>
 // 本機開發
 var app = builder.Build();
 
-// 設定 HTTP 請求處理流程
+// 開發工具
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
@@ -74,6 +74,8 @@ if (app.Environment.IsDevelopment())
     app.UseDeveloperExceptionPage();
 }
 
+// 路由
+app.UseRouting();
 // 本機開發
 //app.UseCors("AllowLocalhost3000");
 // 雲端開發
