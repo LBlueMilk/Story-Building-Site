@@ -28,22 +28,33 @@ namespace BackendAPI.Controllers
         [HttpGet("{storyId}")]
         public async Task<IActionResult> GetCanvas(int storyId)
         {
-            int userId;
+            Console.WriteLine($"[CanvasController] 請求畫布 storyId = {storyId}");
 
+            int userId;
             try
             {
                 userId = _userService.GetUserId();
+                Console.WriteLine($"[CanvasController] 取得 userId = {userId}");
             }
-            catch
+            catch (Exception ex)
             {
+                Console.WriteLine($"[CanvasController] 取得 userId 失敗: {ex.Message}");
                 return Unauthorized(new { error = "Missing or invalid token." });
             }
 
             // 檢查故事是否存在
-            if (!await _userService.StoryExistsAsync(storyId)) return NotFound(new { error = "Story not found." });
+            if (!await _userService.StoryExistsAsync(storyId))
+            {
+                Console.WriteLine("[CanvasController] 故事不存在");
+                return NotFound(new { error = "Story not found." });
+            }
 
             // 檢查使用者是否有權限存取該故事
-            if (!await _userService.HasAccessToStoryAsync(userId, storyId)) return Forbid();
+            if (!await _userService.HasAccessToStoryAsync(userId, storyId))
+            {
+                Console.WriteLine("[CanvasController] 無存取權限");
+                return Forbid();
+            }
 
             try
             {
@@ -58,7 +69,7 @@ namespace BackendAPI.Controllers
                 string lastModified = result?.LastModifiedRaw ?? DateTime.UtcNow.ToString("o");
 
                 JsonElement json;
-
+                Console.WriteLine("[CanvasController] 成功讀取 json");
 
                 try
                 {
@@ -74,19 +85,12 @@ namespace BackendAPI.Controllers
                     });
                 }
 
-                return Ok(new
-                {
-                    json,
-                    lastModified
-                });
+                return Ok(new { json, lastModified = result?.LastModifiedRaw ?? DateTime.UtcNow.ToString("o") });
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new
-                {
-                    error = "Failed to retrieve canvas data.",
-                    detail = ex.Message
-                });
+                Console.WriteLine($"[CanvasController] 發生錯誤: {ex}");
+                return StatusCode(500, new { error = "Failed to retrieve canvas data.", detail = ex.Message });
             }
         }
 
